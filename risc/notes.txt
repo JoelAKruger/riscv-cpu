@@ -1,0 +1,6 @@
+del *.o *.ver *.bin *.s *.hex
+clang --target=riscv64 -fno-builtin -ffreestanding -nostdlib -march=rv32i -mabi=ilp32 -S -o main.s main.c
+clang --target=riscv64 -c -o main.o main.s
+ld.lld -Ttext=0x0000 --oformat=binary -o main.bin main.o
+
+(WSL) objcopy -I binary -O ihex main.bin output.hex

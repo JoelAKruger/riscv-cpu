@@ -1,0 +1,91 @@
+# Reading E:/intelFPGA_lite/18.1/modelsim_ase/tcl/vsim/pref.tcl
+# do RISCV_run_msim_rtl_verilog.do
+# if {[file exists rtl_work]} {
+# 	vdel -lib rtl_work -all
+# }
+# vlib rtl_work
+# vmap work rtl_work
+# Model Technology ModelSim - Intel FPGA Edition vmap 10.5b Lib Mapping Utility 2016.10 Oct  5 2016
+# vmap work rtl_work 
+# Copying E:/intelFPGA_lite/18.1/modelsim_ase/win32aloem/../modelsim.ini to modelsim.ini
+# Modifying modelsim.ini
+# 
+# vlog -vlog01compat -work work +incdir+K:/Code/CPU/riscv {K:/Code/CPU/riscv/main_memory.v}
+# Model Technology ModelSim - Intel FPGA Edition vlog 10.5b Compiler 2016.10 Oct  5 2016
+# Start time: 02:32:38 on Mar 06,2025
+# vlog -reportprogress 300 -vlog01compat -work work "+incdir+K:/Code/CPU/riscv" K:/Code/CPU/riscv/main_memory.v 
+# -- Compiling module main_memory
+# 
+# Top level modules:
+# 	main_memory
+# End time: 02:32:38 on Mar 06,2025, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+# vlog -vlog01compat -work work +incdir+K:/Code/CPU/riscv {K:/Code/CPU/riscv/graphics_memory.v}
+# Model Technology ModelSim - Intel FPGA Edition vlog 10.5b Compiler 2016.10 Oct  5 2016
+# Start time: 02:32:38 on Mar 06,2025
+# vlog -reportprogress 300 -vlog01compat -work work "+incdir+K:/Code/CPU/riscv" K:/Code/CPU/riscv/graphics_memory.v 
+# -- Compiling module graphics_memory
+# 
+# Top level modules:
+# 	graphics_memory
+# End time: 02:32:38 on Mar 06,2025, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+# vlog -sv -work work +incdir+K:/Code/CPU/riscv {K:/Code/CPU/riscv/cpu.sv}
+# Model Technology ModelSim - Intel FPGA Edition vlog 10.5b Compiler 2016.10 Oct  5 2016
+# Start time: 02:32:38 on Mar 06,2025
+# vlog -reportprogress 300 -sv -work work "+incdir+K:/Code/CPU/riscv" K:/Code/CPU/riscv/cpu.sv 
+# -- Compiling module register_file
+# -- Compiling package cpu_sv_unit
+# -- Compiling module arithmetic_logic_unit
+# -- Compiling module cpu_control
+# -- Compiling module immediate_generator
+# -- Compiling module memory_controller
+# -- Compiling module cpu
+# 
+# Top level modules:
+# 	cpu
+# End time: 02:32:38 on Mar 06,2025, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+# vlog -sv -work work +incdir+K:/Code/CPU/riscv {K:/Code/CPU/riscv/testbench.sv}
+# Model Technology ModelSim - Intel FPGA Edition vlog 10.5b Compiler 2016.10 Oct  5 2016
+# Start time: 02:32:38 on Mar 06,2025
+# vlog -reportprogress 300 -sv -work work "+incdir+K:/Code/CPU/riscv" K:/Code/CPU/riscv/testbench.sv 
+# -- Compiling module testbench
+# 
+# Top level modules:
+# 	testbench
+# End time: 02:32:39 on Mar 06,2025, Elapsed time: 0:00:01
+# Errors: 0, Warnings: 0
+# 
+vsim -gui -l msim_transcript work.testbench -L altera_mf_ver
+# vsim -gui -l msim_transcript work.testbench -L altera_mf_ver 
+# Start time: 02:32:56 on Mar 06,2025
+# Loading sv_std.std
+# Loading work.testbench
+# Loading work.cpu_sv_unit
+# Loading work.cpu
+# Loading work.register_file
+# Loading work.immediate_generator
+# Loading work.arithmetic_logic_unit
+# Loading work.memory_controller
+# Loading work.main_memory
+# Loading altera_mf_ver.altsyncram
+# Loading work.graphics_memory
+# Loading work.cpu_control
+# Loading altera_mf_ver.altsyncram_body
+# Loading altera_mf_ver.ALTERA_DEVICE_FAMILIES
+# Loading altera_mf_ver.ALTERA_MF_MEMORY_INITIALIZATION
+# ** Warning: (vsim-3017) K:/Code/CPU/riscv/testbench.sv(9): [TFMPC] - Too few port connections. Expected 6, found 5.
+#    Time: 0 ps  Iteration: 0  Instance: /testbench/CPU File: K:/Code/CPU/riscv/cpu.sv
+# ** Warning: (vsim-3722) K:/Code/CPU/riscv/testbench.sv(9): [TFMPC] - Missing connection for port 'ProgramCounter'.
+# ** Warning: (vsim-3015) K:/Code/CPU/riscv/cpu.sv(417): [PCDPC] - Port size (13) does not match connection size (14) for port 'address_a'. The port definition is at: K:/Code/CPU/riscv/main_memory.v(40).
+#    Time: 0 ps  Iteration: 0  Instance: /testbench/CPU/Memory/MainMemory File: K:/Code/CPU/riscv/main_memory.v
+# ** Warning: (vsim-3015) K:/Code/CPU/riscv/cpu.sv(417): [PCDPC] - Port size (13) does not match connection size (14) for port 'address_b'. The port definition is at: K:/Code/CPU/riscv/main_memory.v(41).
+#    Time: 0 ps  Iteration: 0  Instance: /testbench/CPU/Memory/MainMemory File: K:/Code/CPU/riscv/main_memory.v
+run -all
+# Warning: read_during_write_mode_mixed_ports is assumed as               OLD_DATA
+# Time: 0  Instance: testbench.CPU.Memory.MainMemory.altsyncram_component.m_default.altsyncram_inst
+# Warning: read_during_write_mode_mixed_ports is assumed as               OLD_DATA
+# Time: 0  Instance: testbench.CPU.Memory.GraphicsMemory.altsyncram_component.m_default.altsyncram_inst
+# Break key hit
+# Break at K:/Code/CPU/riscv/graphics_memory.v line 76

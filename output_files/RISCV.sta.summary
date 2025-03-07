@@ -1,0 +1,89 @@
+------------------------------------------------------------
+Timing Analyzer Summary
+------------------------------------------------------------
+
+Type  : Slow 1200mV 85C Model Setup 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 1.405
+TNS   : 0.000
+
+Type  : Slow 1200mV 85C Model Setup 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 25.339
+TNS   : 0.000
+
+Type  : Slow 1200mV 85C Model Hold 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 0.635
+TNS   : 0.000
+
+Type  : Slow 1200mV 85C Model Hold 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 1.238
+TNS   : 0.000
+
+Type  : Slow 1200mV 85C Model Minimum Pulse Width 'CLOCK_50'
+Slack : 9.851
+TNS   : 0.000
+
+Type  : Slow 1200mV 85C Model Minimum Pulse Width 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 19.552
+TNS   : 0.000
+
+Type  : Slow 1200mV 85C Model Minimum Pulse Width 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 24.668
+TNS   : 0.000
+
+Type  : Slow 1200mV 0C Model Setup 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 3.319
+TNS   : 0.000
+
+Type  : Slow 1200mV 0C Model Setup 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 26.442
+TNS   : 0.000
+
+Type  : Slow 1200mV 0C Model Hold 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 0.588
+TNS   : 0.000
+
+Type  : Slow 1200mV 0C Model Hold 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 1.158
+TNS   : 0.000
+
+Type  : Slow 1200mV 0C Model Minimum Pulse Width 'CLOCK_50'
+Slack : 9.798
+TNS   : 0.000
+
+Type  : Slow 1200mV 0C Model Minimum Pulse Width 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 19.572
+TNS   : 0.000
+
+Type  : Slow 1200mV 0C Model Minimum Pulse Width 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 24.685
+TNS   : 0.000
+
+Type  : Fast 1200mV 0C Model Setup 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 14.467
+TNS   : 0.000
+
+Type  : Fast 1200mV 0C Model Setup 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 33.298
+TNS   : 0.000
+
+Type  : Fast 1200mV 0C Model Hold 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 0.247
+TNS   : 0.000
+
+Type  : Fast 1200mV 0C Model Hold 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 0.478
+TNS   : 0.000
+
+Type  : Fast 1200mV 0C Model Minimum Pulse Width 'CLOCK_50'
+Slack : 9.660
+TNS   : 0.000
+
+Type  : Fast 1200mV 0C Model Minimum Pulse Width 'GPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 19.583
+TNS   : 0.000
+
+Type  : Fast 1200mV 0C Model Minimum Pulse Width 'CPUClockGen|altpll_component|auto_generated|pll1|clk[0]'
+Slack : 24.711
+TNS   : 0.000
+
+------------------------------------------------------------

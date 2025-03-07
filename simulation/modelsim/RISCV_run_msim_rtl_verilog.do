@@ -1,0 +1,12 @@
+transcript on
+if {[file exists rtl_work]} {
+	vdel -lib rtl_work -all
+}
+vlib rtl_work
+vmap work rtl_work
+
+vlog -vlog01compat -work work +incdir+K:/Code/CPU/riscv {K:/Code/CPU/riscv/main_memory.v}
+vlog -vlog01compat -work work +incdir+K:/Code/CPU/riscv {K:/Code/CPU/riscv/graphics_memory.v}
+vlog -sv -work work +incdir+K:/Code/CPU/riscv {K:/Code/CPU/riscv/cpu.sv}
+vlog -sv -work work +incdir+K:/Code/CPU/riscv {K:/Code/CPU/riscv/testbench.sv}
+
