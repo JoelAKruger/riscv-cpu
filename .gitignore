@@ -1,0 +1,9 @@
+*.qip
+*.bak
+output_files/*
+incremental_db/*
+simulation/*
+greybox_tmp/*
+db/*
+risc/*
+.qsys_edit/*
