@@ -10,3 +10,4 @@ risc/*
 *.rpt
 *.qws
 *_bb.v
+*.ppf
