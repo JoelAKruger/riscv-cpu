@@ -1,0 +1,1 @@
+clang emulator.c -O2 -luser32 -lgdi32 -o Emulator.exe
