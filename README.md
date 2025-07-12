@@ -15,3 +15,8 @@ To update the program:
 ## Example Program
 The default program draws the Mandelbrot set
 ![Mandelbrot set](example.png)
+
+## Emulator
+I have also written an emulator to test programs. It can run the same program as the FPGA
+ 
+![Emulator](sim.png) 

@@ -12,20 +12,23 @@ void main(void)
 		.Pixels = (u8*)0x20000
 	};
     
-    console Console = {
-        .Output = &Screen,
-        .Color = COLOR_WHITE,
-        .ColorBg = COLOR_BLACK
-    };
+
     
     screen_buffer Window = {
         .Width = 60,
         .Height = 60,
         .PixelsPerScanline = 320,
-        .Pixels = (u8*)(0x20000 + 90 * 320 + 130)
+        .Pixels = (u8*)(0x20000 + 10 * 320 + 10)
     };
-    
-    ClearConsole(&Console);
+ 
     
     DrawMandelbrot(&Screen);
+
+	   console Console = {
+        .Output = &Window,
+        .Color = COLOR_WHITE,
+        .ColorBg = COLOR_BLACK
+    };
+	
+    ConsoleWrite(&Console, "Done");
 }
