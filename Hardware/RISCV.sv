@@ -25,6 +25,17 @@ module RISCV(
 	
 	logic[31:0] ProgramCounter;
 	
+	logic[5:0] 	SubCounter;
+	logic[31:0] MicrosecondCounter;
+	always_ff @(posedge CLOCK_50) begin
+		SubCounter = SubCounter + 1;
+		
+		if (SubCounter == 50) begin
+			SubCounter = 0;
+			MicrosecondCounter = MicrosecondCounter + 1;
+		end
+	end
+	
 	cpu_clock CPUClockGen(
 		.inclk0(CLOCK_50),
 		.c0(CPUClock)
@@ -43,7 +54,9 @@ module RISCV(
 		.GPUAddress(GPUAddress),
 		.GPUData(GPUData),
 		
-		.ProgramCounter(ProgramCounter)
+		.ProgramCounter(ProgramCounter),
+		.InputDevices(~KEY),
+		.Counter(MicrosecondCounter)
 	);
 	
 	//Graphics output

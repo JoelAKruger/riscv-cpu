@@ -338,9 +338,9 @@ void StoreInMemory(emulator* Emulator, store_type StoreType, u32 CPUDataAddress,
     }
 }
 
-#define BUTTON_A 0x100000
-#define BUTTON_B 0x100004
-#define TIMER    0x100100
+#define BUTTON_A 0x40000
+#define BUTTON_B 0x40004
+#define TIMER    0x40100
 
 u32 GetTimerValue() {
     static LARGE_INTEGER Frequency;
@@ -398,15 +398,15 @@ u32 LoadFromMemory(emulator* Emulator, load_type LoadType, u32 CPUDataAddress)
     }
     else if (CPUDataAddress == BUTTON_A)
     {
-        CPUDataOutput = ((GetKeyState(VK_LEFT) & 0x8000) != 0) ||
-                        ((GetKeyState('A') & 0x8000) != 0);
+        CPUDataOutput = ((GetKeyState(VK_UP) & 0x8000) != 0) ||
+                        ((GetKeyState('W') & 0x8000) != 0);
     }
     else if (CPUDataAddress == BUTTON_B)
     {
-        CPUDataOutput = ((GetKeyState(VK_RIGHT) & 0x8000) != 0) ||
-                        ((GetKeyState('D') & 0x8000) != 0);;
+        CPUDataOutput = ((GetKeyState(VK_DOWN) & 0x8000) != 0) ||
+                        ((GetKeyState('S') & 0x8000) != 0);;
     }
-    else if (CPUDataAddress == 0x100100)
+    else if (CPUDataAddress == TIMER)
     {
         assert(LoadType == LOAD_I32); //This is not actually necessary
         CPUDataOutput = GetTimerValue();

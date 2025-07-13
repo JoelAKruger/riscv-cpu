@@ -123,6 +123,12 @@ typedef enum logic[2:0] {
 	LOAD_U16
 } load_type;
 
+typedef enum logic[1:0] {
+	MEMORY_MAIN 	 = 2'b00,
+	MEMORY_GRAPHICS = 2'b01,
+	MEMORY_IO 		 = 2'b10
+} memory_type;
+
 module cpu_control (
 	input[31:0]   			   Instruction,
 	
@@ -326,7 +332,10 @@ module memory_controller(
 	
 	input            GPUClock,
 	input[31:0]      GPUAddress,
-	output reg[7:0]  GPUData
+	output reg[7:0]  GPUData,
+	
+	input[1:0]       InputDevices,
+	input[31:0]      Counter
 );
 
 	logic[1:0]  CPUDataAddressOffset;
@@ -341,8 +350,35 @@ module memory_controller(
 	logic[31:0] RawCPUDataOutput_BigEndian;
 	logic[31:0] GPUDataOut;
 	
-	assign RawCPUDataOutput_BigEndian = CPUMemorySelect ? RawCPUDataOutput_Graphics_BigEndian : RawCPUDataOutput_MainMemory_BigEndian;
-	assign RawCPUDataOutput     = EndianSwap(RawCPUDataOutput_BigEndian);
+	memory_type MemoryType;
+	assign MemoryType = memory_type'(CPUDataAddress[18:17]); //0 -> main memory, 1 -> graphics memory
+	
+	always_comb begin
+		RawCPUDataOutput = 0;
+		
+		case (MemoryType)
+			MEMORY_MAIN: begin
+				RawCPUDataOutput = EndianSwap(RawCPUDataOutput_MainMemory_BigEndian);
+			end
+			MEMORY_GRAPHICS: begin
+				RawCPUDataOutput = EndianSwap(RawCPUDataOutput_Graphics_BigEndian);
+			end
+			MEMORY_IO: begin
+				case (CPUDataAddress[16:2])
+					0: begin
+						RawCPUDataOutput = InputDevices[0];
+					end
+					1: begin 
+						RawCPUDataOutput = InputDevices[1];
+					end
+					64: begin
+						RawCPUDataOutput = Counter;
+					end
+				endcase
+			end
+		endcase
+	end
+	
 	assign CPUInstructionOutput = EndianSwap(CPUInstructionOutput_BigEndian);
 	
 	logic[7:0] DataOut8;
@@ -351,8 +387,7 @@ module memory_controller(
 	logic[15:0] DataOut16;
 	assign DataOut16 = (RawCPUDataOutput >> (CPUDataAddressOffset * 8)) & 16'hFFFF;
 	
-	logic CPUMemorySelect;
-	assign CPUMemorySelect = CPUDataAddress[17]; //0 -> main memory, 1 -> graphics memory
+
 	
 	always_comb begin
 		DataIn = 0;
@@ -413,7 +448,7 @@ module memory_controller(
 	end
 	
 	logic  MainMemoryWriteEnable;
-	assign MainMemoryWriteEnable = (CPUMemorySelect == 0) & CPUDataWriteEnable;
+	assign MainMemoryWriteEnable = (MemoryType == MEMORY_MAIN) & CPUDataWriteEnable;
 	
 	logic[31:0] RawCPUDataOutput_MainMemory_BigEndian;
 	
@@ -433,7 +468,7 @@ module memory_controller(
 	);
 	
 	logic  GraphicsMemoryWriteEnable;
-	assign GraphicsMemoryWriteEnable = (CPUMemorySelect == 1) & CPUDataWriteEnable;
+	assign GraphicsMemoryWriteEnable = (MemoryType == MEMORY_GRAPHICS) & CPUDataWriteEnable;
 		
 	logic[31:0] RawCPUDataOutput_Graphics_BigEndian;
 	logic[31:0] RawGPUDataOutput_BigEndian;
@@ -487,7 +522,9 @@ module cpu(
 	input[31:0] GPUAddress,
 	output[7:0] GPUData,
 	
-	output[31:0] ProgramCounter
+	input[1:0]   InputDevices,
+	output[31:0] ProgramCounter,
+	input[31:0]  Counter
 );
 
 	reg[31:0] PC;
@@ -557,7 +594,10 @@ module cpu(
 	
 		.GPUClock(GPUClock),
 		.GPUAddress(GPUAddress),
-		.GPUData(GPUData)
+		.GPUData(GPUData),
+		
+		.InputDevices(InputDevices),
+		.Counter(Counter)
 	);
 	
 	cpu_control Control(
