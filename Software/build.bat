@@ -1,6 +1,7 @@
 del *.o *.ver *.bin *.hex *.mif
 
-clang -c -Iinclude --target=riscv32 -fno-builtin -ffreestanding -nostdlib -march=rv32i -mabi=ilp32 src/main.c -O3
+REM clang -c -Iinclude --target=riscv32 -fno-builtin -ffreestanding -nostdlib -march=rv32i -mabi=ilp32 src/main.c -O3
+clang -c -Iinclude --target=riscv32 -fno-builtin -ffreestanding -nostdlib -march=rv32i -mabi=ilp32 src/pong.c -O3 -o main.o
 REM clang -c --target=riscv32 -fno-builtin -ffreestanding -nostdlib -march=rv32i -mabi=ilp32 main.c -S
 clang -c --target=riscv32 -march=rv32i -c -o init.o src/init.s
 ld.lld -T src/link.ld --oformat=binary lib/libgcc.a lib/libm.a main.o init.o -o main.bin 

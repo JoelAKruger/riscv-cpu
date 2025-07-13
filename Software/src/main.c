@@ -20,8 +20,7 @@ void main(void)
         .PixelsPerScanline = 320,
         .Pixels = (u8*)(0x20000 + 10 * 320 + 10)
     };
- 
-    
+
     DrawMandelbrot(&Screen);
 
 	   console Console = {

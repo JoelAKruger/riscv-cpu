@@ -55,6 +55,43 @@ DrawChar(screen_buffer Screen, u32 X, u32 Y, u8 Color, char C)
     }
 }
 
+int Max(int A, int B)
+{
+    if (A > B)
+    {
+        return A;
+    }
+    return B;
+}
+
+int Min(int A, int B)
+{
+    if (A < B)
+    {
+        return A;
+    }
+    return B;
+}
+
+static void
+DrawRectangle(screen_buffer Screen, int X, int Y, int W, int H, u8 Color)
+{
+    int Left = Max(0, X);
+    int Right = Min(Screen.Width, X + W);
+    int Top = Max(0, Y);
+    int Bottom = Min(Screen.Height, Y + H);
+    
+    u8* Row = Screen.Pixels + Top * Screen.PixelsPerScanline;
+    for (int I = Top; I < Bottom; I++)
+    {
+        for (int J = Left; J < Right; J++)
+        {
+            Row[J] = Color;
+        }
+        Row += Screen.PixelsPerScanline;
+    }
+}
+
 static u32
 StringLength(char* Text)
 {

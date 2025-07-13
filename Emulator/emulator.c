@@ -327,43 +327,95 @@ void StoreInMemory(emulator* Emulator, store_type StoreType, u32 CPUDataAddress,
         } break;
         case STORE_16:
         {
+            assert((CPUDataAddress & 0x1) == 0);
             *(u16*)(Emulator->Memory + CPUDataAddress) = CPUDataIn;
         } break;
         case STORE_32:
         {
+            assert((CPUDataAddress & 0x3) == 0);
             *(u32*)(Emulator->Memory + CPUDataAddress) = CPUDataIn;
         } break;
     }
 }
 
+#define BUTTON_A 0x100000
+#define BUTTON_B 0x100004
+#define TIMER    0x100100
+
+u32 GetTimerValue() {
+    static LARGE_INTEGER Frequency;
+    static LARGE_INTEGER Start;
+    static int Initialised;
+
+    if (!Initialised) {
+        QueryPerformanceFrequency(&Frequency);
+        QueryPerformanceCounter(&Start);
+        Initialised = 1;
+    }
+
+    LARGE_INTEGER Now;
+    QueryPerformanceCounter(&Now);
+
+    LONGLONG elapsed = Now.QuadPart - Start.QuadPart;
+    // Convert to microseconds
+    return (u32)((elapsed * 1000000) / Frequency.QuadPart);
+}
+
 u32 LoadFromMemory(emulator* Emulator, load_type LoadType, u32 CPUDataAddress)
 {
-    assert((CPUDataAddress < Emulator->MemorySize) || (LoadType == LOAD_NONE));
+    
     u32 CPUDataOutput = 0;
-    switch (LoadType)
+
+    if (CPUDataAddress < Emulator->MemorySize)
     {
-        case LOAD_NONE: break;
-        case LOAD_U8:
+        switch (LoadType)
         {
-			CPUDataOutput = Emulator->Memory[CPUDataAddress];
-        } break;
-		case LOAD_U16:
-        {
-		    CPUDataOutput = *(u16*)(Emulator->Memory + CPUDataAddress);
-		} break;
-		case LOAD_I32:
-        {
-			CPUDataOutput = *(i32*)(Emulator->Memory + CPUDataAddress);
-		} break;
-		case LOAD_I8:
-        {
-			CPUDataOutput = (u32)(i32) *(i8*)(Emulator->Memory + CPUDataAddress);
-		} break;
-		case LOAD_I16:
-        {
-			CPUDataOutput = (u32)(i32) *(i16*)(Emulator->Memory + CPUDataAddress);
-		} break;		
+            case LOAD_NONE: break;
+            case LOAD_U8:
+            {
+                CPUDataOutput = Emulator->Memory[CPUDataAddress];
+            } break;
+            case LOAD_U16:
+            {
+                assert((CPUDataAddress & 0x1) == 0);
+                CPUDataOutput = *(u16*)(Emulator->Memory + CPUDataAddress);
+            } break;
+            case LOAD_I32:
+            {
+                assert((CPUDataAddress & 0x3) == 0);
+                CPUDataOutput = *(i32*)(Emulator->Memory + CPUDataAddress);
+            } break;
+            case LOAD_I8:
+            {
+                CPUDataOutput = (u32)(i32) * (i8*)(Emulator->Memory + CPUDataAddress);
+            } break;
+            case LOAD_I16:
+            {
+                assert((CPUDataAddress & 0x1) == 0);
+                CPUDataOutput = (u32)(i32) * (i16*)(Emulator->Memory + CPUDataAddress);
+            } break;
+        }
     }
+    else if (CPUDataAddress == BUTTON_A)
+    {
+        CPUDataOutput = ((GetKeyState(VK_LEFT) & 0x8000) != 0) ||
+                        ((GetKeyState('A') & 0x8000) != 0);
+    }
+    else if (CPUDataAddress == BUTTON_B)
+    {
+        CPUDataOutput = ((GetKeyState(VK_RIGHT) & 0x8000) != 0) ||
+                        ((GetKeyState('D') & 0x8000) != 0);;
+    }
+    else if (CPUDataAddress == 0x100100)
+    {
+        assert(LoadType == LOAD_I32); //This is not actually necessary
+        CPUDataOutput = GetTimerValue();
+    }
+    else
+    {
+        assert(0);
+    }
+
     return CPUDataOutput;
 }
 
@@ -469,7 +521,7 @@ unsigned long RunEmulator(void* Emulator_)
     }
 }
 
-void LoadEmulator(emulator* Emulator, char* BinaryPath)
+HANDLE LoadEmulator(emulator* Emulator, char* BinaryPath)
 {
     HANDLE KernelFile = CreateFileA(BinaryPath, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     assert(KernelFile != INVALID_HANDLE_VALUE);
@@ -478,7 +530,7 @@ void LoadEmulator(emulator* Emulator, char* BinaryPath)
     DWORD MemorySize = 0x40000;
     void* Base = VirtualAlloc(0, MemorySize, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 
-    assert(KernelSize < 0x4000);
+    assert(KernelSize < 0x6000);
 
     DWORD BytesRead;
     ReadFile(KernelFile, Base, KernelSize, &BytesRead, 0);
@@ -488,10 +540,11 @@ void LoadEmulator(emulator* Emulator, char* BinaryPath)
     Emulator->Memory = Base;
     Emulator->MemorySize = MemorySize;
 
-    DWORD ThreadID = 0;
-    CreateThread(0, 0, RunEmulator, (void*)Emulator, 0, &ThreadID);
+    HANDLE Thread = CreateThread(0, 0, RunEmulator, (void*)Emulator, 0, 0);
 
     CloseHandle(KernelFile);
+
+    return Thread;
 }
 
 int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE _, LPWSTR CommandLine, int ShowCode)
@@ -521,7 +574,11 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE _, LPWSTR CommandLine, int Sho
     
 	ShowWindow(Window, ShowCode);
 	
-    BITMAPINFO* BitmapInfo = malloc(sizeof(BitmapInfo->bmiHeader) + 256 * sizeof(BitmapInfo->bmiColors[0]));
+    BITMAPINFO* BitmapInfo = 0;
+    int BitmapInfoSize = sizeof(BitmapInfo->bmiHeader) + 256 * sizeof(BitmapInfo->bmiColors[0]);
+    BitmapInfo = malloc(BitmapInfoSize);
+    ZeroMemory(BitmapInfo, BitmapInfoSize);
+
     BitmapInfo->bmiHeader.biSize = sizeof(BitmapInfo->bmiHeader);
     BitmapInfo->bmiHeader.biWidth = 320;
     BitmapInfo->bmiHeader.biHeight = -240;  // Negative for top-down DIB
@@ -532,9 +589,9 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE _, LPWSTR CommandLine, int Sho
     // Fill out 256-entry 3-3-2 palette
     for (int i = 0; i < 256; ++i)
     {
-        uint8_t r = (i >> 5) & 0x07;  // Top 3 bits
-        uint8_t g = (i >> 2) & 0x07;  // Middle 3 bits
-        uint8_t b = (i >> 0) & 0x03;  // Bottom 2 bits
+        uint8_t r = (i >> 5) & 0x07;
+        uint8_t g = (i >> 2) & 0x07;
+        uint8_t b = (i >> 0) & 0x03;
 
         BitmapInfo->bmiColors[i].rgbRed = ((float)r * 255) / 7;
         BitmapInfo->bmiColors[i].rgbGreen = ((float)g * 255) / 7;
@@ -543,7 +600,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE _, LPWSTR CommandLine, int Sho
     }
 
     emulator Emulator = { 0 };
-    LoadEmulator(&Emulator, "main.bin");
+    HANDLE EmulatorThread = LoadEmulator(&Emulator, "main.bin");
 
     void* Bits = Emulator.Memory + 0x20000;
 
@@ -559,6 +616,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE _, LPWSTR CommandLine, int Sho
         {
             if (Message.message == WM_QUIT)
             {
+                TerminateThread(EmulatorThread, 0);
                 return 0;
             }
 
