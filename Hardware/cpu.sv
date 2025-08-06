@@ -647,19 +647,41 @@ module cpu(
 	logic[31:0] JumpAndLinkImmediate;
 	assign JumpAndLinkImmediate = {{12{Instruction[31]}}, Instruction[19:12], Instruction[20], Instruction[30:21], 1'b0};
 	
-	always_comb begin
+	pc_src_select PCSelect(
+		PC,
+		BranchImmediate,
+		JumpAndLinkImmediate,
+		AluResult,
+		PCSrc,
+		NextPC
+	);
+	
+	always_ff @(posedge Clock) begin
+		PC = Reset ? 0 : NextPC;
+	end
+	
+endmodule
+
+module pc_src_select(
+	input[31:0] 			PC,
+	input[31:0]          BranchImmediate,
+	input[31:0]          JumpAndLinkImmediate,
+	input[31:0]          AluResult,
+	
+	input pc_source      PCSrc,
+	output logic[31:0] 	NextPC
+);
+
+    always_comb begin
 		case (PCSrc)
 			PC_SRC_PC_PLUS_4:   		NextPC = PC + 4;
 			PC_SRC_PC_PLUS_IMM: 		NextPC = PC + BranchImmediate;
 			PC_SRC_PC_PLUS_JAL_IMM: NextPC = PC + JumpAndLinkImmediate;
 			PC_SRC_ALU_RESULT:  		NextPC = AluResult;
 			PC_SRC_BRANCH:      		NextPC = AluResult[0] ? PC + BranchImmediate : PC + 4;
+			default:                NextPC = 0;
 		endcase
 		NextPC[1:0] = 2'b00;
 	end
-	
-	always_ff @(posedge Clock) begin
-		PC = Reset ? 0 : NextPC;
-	end
-	
+
 endmodule
