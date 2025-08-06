@@ -43,5 +43,6 @@ _start:
     nop
     nop
     li sp, 0x8000
+	
     call main
     j .

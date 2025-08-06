@@ -30,7 +30,7 @@ module register_file(
 
 endmodule
 
-typedef enum logic[3:0] {
+typedef enum logic[4:0] {
 	ALU_NONE,
 	ALU_ADD,
 	ALU_SUB,
@@ -46,7 +46,10 @@ typedef enum logic[3:0] {
 	ALU_GE,
 	ALU_GEU,
 	ALU_L,
-	ALU_LU
+	ALU_LU,
+	
+	// Custom Op
+	ALU_BITCOUNT
 } alu_op;
 
 module arithmetic_logic_unit(
@@ -76,6 +79,15 @@ module arithmetic_logic_unit(
 			ALU_GEU: Result = Input1 >= Input2;
 			ALU_L:   Result = $signed(Input1) < $signed(Input2);
 			ALU_LU:  Result = Input1 < Input2;
+			
+			//Custom op
+			ALU_BITCOUNT: begin
+				Result = 0;
+				for (int i = 0; i < 32; i++) begin
+					Result = Result + Input1[i];
+				end
+			end
+			
 		endcase
 	end
 
@@ -286,6 +298,11 @@ module cpu_control (
 				endcase
 			end
 		
+			//Custom instructions
+			5'b00010: begin // Custom0
+            RegWrite = 1;
+            AluOp = ALU_BITCOUNT;
+			end
 		endcase
 	end
 

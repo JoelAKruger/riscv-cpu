@@ -3,6 +3,13 @@
 
 int __errno;
 
+u32 BitCount(u32 Arg) {
+    int Result;
+    asm volatile ( ".insn r CUSTOM_0, 0, 0, %0, %1, x0" 
+                  : "=r" (Result) : "r" (Arg) : );
+    return Result;
+}
+
 void main(void)
 {
 	screen_buffer Screen = {
@@ -12,22 +19,14 @@ void main(void)
 		.Pixels = (u8*)0x20000
 	};
     
-
-    
-    screen_buffer Window = {
-        .Width = 60,
-        .Height = 60,
-        .PixelsPerScanline = 320,
-        .Pixels = (u8*)(0x20000 + 10 * 320 + 10)
-    };
-
-    DrawMandelbrot(&Screen);
-
-	   console Console = {
-        .Output = &Window,
+    console Console = {
+        .Output = &Screen,
         .Color = COLOR_WHITE,
         .ColorBg = COLOR_BLACK
     };
-	
-    ConsoleWrite(&Console, "Done");
+    
+	for (u32 I = 0; ; I++)
+    {
+        ConsoleWrite(&Console, "Bit count of %d is %d\n", I, BitCount(I));
+    }
 }

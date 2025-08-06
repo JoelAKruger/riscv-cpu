@@ -18,7 +18,7 @@ typedef struct
 {
     uint8_t* Memory;
     u32 MemorySize;
-
+    
     u32 Regs[32];
     u32 PC;
 } emulator;
@@ -39,7 +39,9 @@ typedef enum {
 	ALU_GE,
 	ALU_GEU,
 	ALU_L,
-	ALU_LU
+	ALU_LU,
+    
+    ALU_BITCOUNT
 } alu_op;
 
 typedef enum {
@@ -98,7 +100,7 @@ typedef struct {
 u32 DoALUOp(alu_op Op, u32 Input1, u32 Input2)
 {
     u32 Result = 0;
-
+    
     switch (Op)
     {
         case ALU_NONE: Result = 0; break;
@@ -117,8 +119,10 @@ u32 DoALUOp(alu_op Op, u32 Input1, u32 Input2)
 		case ALU_GEU: Result = Input1 >= Input2; break;
 		case ALU_L:   Result = (i32)Input1 < (i32)Input2; break;
 		case ALU_LU:  Result = Input1 < Input2; break;
+        case ALU_BITCOUNT: Result = __popcnt(Input1); break;
+        default: assert(0);
     }
-
+    
     return Result;
 }
 
@@ -126,9 +130,9 @@ cpu_control DoCPUControl(u32 Instruction)
 {
     u32 Opcode = (Instruction >> 2) & 0x1F;
     u32 Operation = (Instruction >> 12) & 0x7;
-
+    
     cpu_control Result = {0};
-
+    
     switch (Opcode)
     {
         case 0b01101: //Load upper immediate
@@ -138,7 +142,7 @@ cpu_control DoCPUControl(u32 Instruction)
             Result.ImmediateType = IMM_UI20;
             Result.AluOp = ALU_IN2;
         } break;
-
+        
         case 0b00101: //Add upper immediate to pc
         {
 			Result.RegWrite = 1;
@@ -147,12 +151,12 @@ cpu_control DoCPUControl(u32 Instruction)
 			Result.ImmediateType = IMM_UI20;
 			Result.AluOp = ALU_ADD;
         } break;
-
+        
         case 0b00100: //Alu operation with immediate
         {
             Result.RegWrite = 1;
             Result.AluInput2IsImmediate = 1;
-        
+            
             switch (Operation)
             {
                 case 0b000: //Add immediate
@@ -195,9 +199,10 @@ cpu_control DoCPUControl(u32 Instruction)
                     Result.ImmediateType = IMM_U5;
                     Result.AluOp = (Instruction & (1 << 30)) ? ALU_SRA : ALU_SRL;
                 } break;
+                default: assert(0);
             }
         } break;
-			
+        
         case 0b01100: //Alu operation
         {
             Result.RegWrite = 1;
@@ -244,7 +249,7 @@ cpu_control DoCPUControl(u32 Instruction)
                 case 0b010: Result.StoreType = STORE_32; break;
             }
         } break;
-    
+        
         case 0b11011: //Jump and link immediate
         {
             Result.RegWrite = 1;
@@ -275,8 +280,16 @@ cpu_control DoCPUControl(u32 Instruction)
                 case 0b111: Result.AluOp = ALU_GEU; break;
             }
         } break;
+        
+        case 0b00010: //Custom instruction (bit count)
+        {
+            Result.RegWrite = 1;
+            Result.AluOp = ALU_BITCOUNT;
+        } break;
+        
+        default: assert(0);
     }
-
+    
     return Result;
 }
 
@@ -290,7 +303,7 @@ u32 GenerateImmediate(u32 Instruction, immediate_type Type)
 {
     u32 Imm20 = (Instruction >> 12);
     u32 Imm12 = (Instruction >> 20);
-
+    
     u32 Output = 0;
     switch (Type)
     {
@@ -301,15 +314,16 @@ u32 GenerateImmediate(u32 Instruction, immediate_type Type)
         case IMM_U12:           Output = Imm12; break;
         case IMM_U5:            Output = (Instruction >> 20) & 0x1F; break;
         case IMM_I12_UNPACKED:  Output = SignExtend(((Instruction >> 25) & 0x7F) << 5 | ((Instruction >> 7) & 0x1F), 12); break;
+        default: assert(0);
     }
-
+    
     return Output;
 }
 
 u32 ReadInstructionFromMemory(emulator* Emulator)
 {
     assert(Emulator->PC < Emulator->MemorySize);
-
+    
     u32 Result = *(u32*)(Emulator->Memory + Emulator->PC);
     return Result;
 }
@@ -317,7 +331,7 @@ u32 ReadInstructionFromMemory(emulator* Emulator)
 void StoreInMemory(emulator* Emulator, store_type StoreType, u32 CPUDataAddress, u32 CPUDataIn)
 {
     assert(CPUDataAddress < Emulator->MemorySize);
-
+    
     switch (StoreType)
     {
         case STORE_NONE: break;
@@ -335,6 +349,7 @@ void StoreInMemory(emulator* Emulator, store_type StoreType, u32 CPUDataAddress,
             assert((CPUDataAddress & 0x3) == 0);
             *(u32*)(Emulator->Memory + CPUDataAddress) = CPUDataIn;
         } break;
+        default: assert(0);
     }
 }
 
@@ -346,16 +361,16 @@ u32 GetTimerValue() {
     static LARGE_INTEGER Frequency;
     static LARGE_INTEGER Start;
     static int Initialised;
-
+    
     if (!Initialised) {
         QueryPerformanceFrequency(&Frequency);
         QueryPerformanceCounter(&Start);
         Initialised = 1;
     }
-
+    
     LARGE_INTEGER Now;
     QueryPerformanceCounter(&Now);
-
+    
     LONGLONG elapsed = Now.QuadPart - Start.QuadPart;
     // Convert to microseconds
     return (u32)((elapsed * 1000000) / Frequency.QuadPart);
@@ -365,7 +380,7 @@ u32 LoadFromMemory(emulator* Emulator, load_type LoadType, u32 CPUDataAddress)
 {
     
     u32 CPUDataOutput = 0;
-
+    
     if (CPUDataAddress < Emulator->MemorySize)
     {
         switch (LoadType)
@@ -394,17 +409,18 @@ u32 LoadFromMemory(emulator* Emulator, load_type LoadType, u32 CPUDataAddress)
                 assert((CPUDataAddress & 0x1) == 0);
                 CPUDataOutput = (u32)(i32) * (i16*)(Emulator->Memory + CPUDataAddress);
             } break;
+            default: assert(0);
         }
     }
     else if (CPUDataAddress == BUTTON_A)
     {
         CPUDataOutput = ((GetKeyState(VK_UP) & 0x8000) != 0) ||
-                        ((GetKeyState('W') & 0x8000) != 0);
+        ((GetKeyState('W') & 0x8000) != 0);
     }
     else if (CPUDataAddress == BUTTON_B)
     {
         CPUDataOutput = ((GetKeyState(VK_DOWN) & 0x8000) != 0) ||
-                        ((GetKeyState('S') & 0x8000) != 0);;
+        ((GetKeyState('S') & 0x8000) != 0);;
     }
     else if (CPUDataAddress == TIMER)
     {
@@ -415,7 +431,7 @@ u32 LoadFromMemory(emulator* Emulator, load_type LoadType, u32 CPUDataAddress)
     {
         assert(0);
     }
-
+    
     return CPUDataOutput;
 }
 
@@ -423,23 +439,23 @@ u32 GetNextPC(emulator* Emulator, u32 Instruction, pc_source PCSrc, u32 AluResul
 {
     u32 NextPC = 0;
     u32 PC = Emulator->PC;
-
+    
     u32 BranchImmediate = SignExtend(
-        ((Instruction >> 31) & 0x1) << 12 |
-        ((Instruction >> 7)  & 0x1) << 11 |
-        ((Instruction >> 25) & 0x3F) << 5 |
-        ((Instruction >> 8)  & 0xF) << 1,
-        13
-    );
-
+                                     ((Instruction >> 31) & 0x1) << 12 |
+                                     ((Instruction >> 7)  & 0x1) << 11 |
+                                     ((Instruction >> 25) & 0x3F) << 5 |
+                                     ((Instruction >> 8)  & 0xF) << 1,
+                                     13
+                                     );
+    
     u32 JumpAndLinkImmediate = SignExtend(
-        ((Instruction >> 31) & 0x1) << 20 |
-        ((Instruction >> 12) & 0xFF) << 12 |
-        ((Instruction >> 20) & 0x1) << 11 |
-        ((Instruction >> 21) & 0x3FF) << 1,
-        21
-    );
-
+                                          ((Instruction >> 31) & 0x1) << 20 |
+                                          ((Instruction >> 12) & 0xFF) << 12 |
+                                          ((Instruction >> 20) & 0x1) << 11 |
+                                          ((Instruction >> 21) & 0x3FF) << 1,
+                                          21
+                                          );
+    
     switch (PCSrc)
     {
         case PC_SRC_PC_PLUS_4:   		NextPC = PC + 4; break;
@@ -447,6 +463,7 @@ u32 GetNextPC(emulator* Emulator, u32 Instruction, pc_source PCSrc, u32 AluResul
         case PC_SRC_PC_PLUS_JAL_IMM:    NextPC = PC + JumpAndLinkImmediate; break;
         case PC_SRC_ALU_RESULT:  		NextPC = AluResult; break;
         case PC_SRC_BRANCH:      		NextPC = (AluResult & 0x1) ? PC + BranchImmediate : PC + 4; break;
+        default: assert(0);
 	}
     return NextPC;
 }
@@ -454,21 +471,21 @@ u32 GetNextPC(emulator* Emulator, u32 Instruction, pc_source PCSrc, u32 AluResul
 u32 ReadRegister(emulator* Emulator, int RegisterIndex)
 {
     assert(RegisterIndex < 32);
-
+    
     u32 Result = 0;
-
+    
     if (RegisterIndex > 0)
     {
         Result = Emulator->Regs[RegisterIndex];
     }
-
+    
     return Result;
 }
 
 void WriteRegister(emulator* Emulator, int RegisterIndex, u32 Value)
 {
     assert(RegisterIndex < 32);
-
+    
     if (RegisterIndex > 0)
     {
         Emulator->Regs[RegisterIndex] = Value; 
@@ -483,27 +500,27 @@ unsigned long RunEmulator(void* Emulator_)
         u32 Instruction = ReadInstructionFromMemory(Emulator);
         //printf("PC = %x, Instruction = %x\n", Emulator->PC, Instruction);
         cpu_control Control = DoCPUControl(Instruction);
-
+        
         u32 Reg1 = ReadRegister(Emulator, (Instruction >> 15) & 0x1F);
         u32 Reg2 = ReadRegister(Emulator, (Instruction >> 20) & 0x1F);
-
+        
         u32 Immediate = GenerateImmediate(Instruction, Control.ImmediateType);
-
+        
         u32 AluInput1 = Control.AluInput1IsPC ? Emulator->PC : Reg1;
         u32 AluInput2 = Control.AluInput2IsImmediate ? Immediate : Reg2;
         u32 AluResult = DoALUOp(Control.AluOp, AluInput1, AluInput2);
-
+        
         if (Control.MemWrite)
         {
             StoreInMemory(Emulator, Control.StoreType, AluResult, Reg2);
         }
-
+        
         u32 MemoryRead = 0;
         if (Control.LoadType != LOAD_NONE)
         {
             MemoryRead = LoadFromMemory(Emulator, Control.LoadType, AluResult);
         }
-
+        
         if (Control.RegWrite)
         {
             u32 Writeback = 0;
@@ -513,10 +530,10 @@ unsigned long RunEmulator(void* Emulator_)
                 case WRITEBACK_MEMORY_READ:  Writeback = MemoryRead; break;
                 case WRITEBACK_PC_PLUS_4:    Writeback = Emulator->PC + 4; break;
             }
-
+            
             WriteRegister(Emulator, (Instruction >> 7) & 0x1F, Writeback);
         }
-
+        
         Emulator->PC = GetNextPC(Emulator, Instruction, Control.PCSrc, AluResult);
     }
 }
@@ -525,25 +542,25 @@ HANDLE LoadEmulator(emulator* Emulator, char* BinaryPath)
 {
     HANDLE KernelFile = CreateFileA(BinaryPath, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     assert(KernelFile != INVALID_HANDLE_VALUE);
-
+    
     DWORD KernelSize = GetFileSize(KernelFile, 0);
     DWORD MemorySize = 0x40000;
     void* Base = VirtualAlloc(0, MemorySize, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-
+    
     assert(KernelSize < 0x6000);
-
+    
     DWORD BytesRead;
     ReadFile(KernelFile, Base, KernelSize, &BytesRead, 0);
-
+    
     assert(BytesRead == KernelSize);
-
+    
     Emulator->Memory = Base;
     Emulator->MemorySize = MemorySize;
-
+    
     HANDLE Thread = CreateThread(0, 0, RunEmulator, (void*)Emulator, 0, 0);
-
+    
     CloseHandle(KernelFile);
-
+    
     return Thread;
 }
 
@@ -578,39 +595,39 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE _, LPWSTR CommandLine, int Sho
     int BitmapInfoSize = sizeof(BitmapInfo->bmiHeader) + 256 * sizeof(BitmapInfo->bmiColors[0]);
     BitmapInfo = malloc(BitmapInfoSize);
     ZeroMemory(BitmapInfo, BitmapInfoSize);
-
+    
     BitmapInfo->bmiHeader.biSize = sizeof(BitmapInfo->bmiHeader);
     BitmapInfo->bmiHeader.biWidth = 320;
     BitmapInfo->bmiHeader.biHeight = -240;  // Negative for top-down DIB
     BitmapInfo->bmiHeader.biPlanes = 1;
     BitmapInfo->bmiHeader.biBitCount = 8;   // 8-bit indexed color
     BitmapInfo->bmiHeader.biCompression = BI_RGB;
-
+    
     // Fill out 256-entry 3-3-2 palette
     for (int i = 0; i < 256; ++i)
     {
         uint8_t r = (i >> 5) & 0x07;
         uint8_t g = (i >> 2) & 0x07;
         uint8_t b = (i >> 0) & 0x03;
-
+        
         BitmapInfo->bmiColors[i].rgbRed = ((float)r * 255) / 7;
         BitmapInfo->bmiColors[i].rgbGreen = ((float)g * 255) / 7;
         BitmapInfo->bmiColors[i].rgbBlue = ((float)b * 255) / 3;
         BitmapInfo->bmiColors[i].rgbReserved = 0;
     }
-
+    
     emulator Emulator = { 0 };
     HANDLE EmulatorThread = LoadEmulator(&Emulator, "main.bin");
-
+    
     void* Bits = Emulator.Memory + 0x20000;
-
+    
     HDC WindowDC = GetDC(Window);
-
+    
     while (1)
     {
         LARGE_INTEGER StartCount;
         QueryPerformanceCounter(&StartCount);
-
+        
         MSG Message;
         while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
         {
@@ -619,18 +636,18 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE _, LPWSTR CommandLine, int Sho
                 TerminateThread(EmulatorThread, 0);
                 return 0;
             }
-
+            
             TranslateMessage(&Message);
             DispatchMessage(&Message);
         }
-
+        
         GetClientRect(Window, &ClientRect);
-
+        
         int ScanlinesCopied = StretchDIBits(WindowDC,
-            0, 0, ClientRect.right, ClientRect.bottom,
-            0, 0, 320, 240,
-            Bits, BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
-
+                                            0, 0, ClientRect.right, ClientRect.bottom,
+                                            0, 0, 320, 240,
+                                            Bits, BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+        
         int x = 3;
     }
 }
