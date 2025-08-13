@@ -16,7 +16,7 @@ void main(void)
 		.Width = 320,
 		.Height = 240,
 		.PixelsPerScanline = 320,
-		.Pixels = (u8*)0x20000
+		.Pixels = (u8*)0x8000
 	};
     
     console Console = {

@@ -93,7 +93,7 @@ module arithmetic_logic_unit(
 
 endmodule
 
-`define SignExtend(Value, From) {{(32 - From){Value[From-1]}}, Value}
+`define SignExtend(value, width) {{(32-(width)){value[(width)-1]}}, value}
 
 typedef enum logic[1:0] {
 	WRITEBACK_ALU_RESULT,
@@ -140,6 +140,11 @@ typedef enum logic[1:0] {
 	MEMORY_GRAPHICS = 2'b01,
 	MEMORY_IO 		 = 2'b10
 } memory_type;
+
+typedef enum logic[0:0] {
+	STATE_FETCH,
+	STATE_EXECUTE
+} cpu_state;
 
 module cpu_control (
 	input[31:0]   			   Instruction,
@@ -311,7 +316,7 @@ endmodule
 module immediate_generator(
 	input[31:0]          Instruction,
 	input immediate_type Type,
-	output reg[31:0]         Output
+	output reg[31:0]     Output
 );
 
 	logic[19:0] Imm20;
@@ -333,79 +338,77 @@ module immediate_generator(
 
 endmodule
 
-module memory_controller(
-	input            CPUClock,
-	input				  CPUReset,
-	input[31:0]  	  CPUInstructionAddress,
-	input[31:0]      CPUDataAddress,
-	input[31:0]      CPUDataIn,
-	input        	  CPUDataWriteEnable,
-	
-	output[31:0] CPUInstructionOutput,
-	output reg[31:0] CPUDataOutput,
-	
-	input store_type StoreType,
-	input load_type  LoadType,
-	
-	input            GPUClock,
-	input[31:0]      GPUAddress,
-	output reg[7:0]  GPUData,
-	
-	input[1:0]       InputDevices,
-	input[31:0]      Counter
+function [3:0] GetByteEnable (
+    store_type StoreType,
+    input [1:0] Offset
 );
 
-	logic[1:0]  CPUDataAddressOffset;
-	assign      CPUDataAddressOffset = CPUDataAddress[1:0];
+    begin
+        case (StoreType)
+            STORE_8: begin
+                case (Offset)
+                    2'd0: GetByteEnable = 4'b0001;
+                    2'd1: GetByteEnable = 4'b0010;
+                    2'd2: GetByteEnable = 4'b0100;
+                    2'd3: GetByteEnable = 4'b1000;
+                    default: GetByteEnable = 4'b0000;
+                endcase
+            end
+             STORE_16: begin
+                case (Offset)
+                    2'd0: GetByteEnable = 4'b0011;
+                    2'd2: GetByteEnable = 4'b1100;
+                    default: GetByteEnable = 4'b0000;
+                endcase
+            end
+            STORE_32: GetByteEnable = 4'b1111;
+            default: GetByteEnable = 4'b0000;
+        endcase
+    end
+endfunction
 
-	logic[31:0] DataIn;
-	logic[3:0]  ByteEnable;
-	
-	logic[31:0] CPUInstructionOutput_BigEndian;
-	logic[31:0] CPUInstDataOut;
-	logic[31:0] RawCPUDataOutput;
-	logic[31:0] RawCPUDataOutput_BigEndian;
-	logic[31:0] GPUDataOut;
-	
-	memory_type MemoryType;
-	assign MemoryType = memory_type'(CPUDataAddress[18:17]); //0 -> main memory, 1 -> graphics memory
-	
-	always_comb begin
-		RawCPUDataOutput = 0;
-		
-		case (MemoryType)
-			MEMORY_MAIN: begin
-				RawCPUDataOutput = EndianSwap(RawCPUDataOutput_MainMemory_BigEndian);
-			end
-			MEMORY_GRAPHICS: begin
-				RawCPUDataOutput = EndianSwap(RawCPUDataOutput_Graphics_BigEndian);
-			end
-			MEMORY_IO: begin
-				case (CPUDataAddress[16:2])
-					0: begin
-						RawCPUDataOutput = InputDevices[0];
-					end
-					1: begin 
-						RawCPUDataOutput = InputDevices[1];
-					end
-					64: begin
-						RawCPUDataOutput = Counter;
-					end
-				endcase
-			end
-		endcase
-	end
-	
-	assign CPUInstructionOutput = EndianSwap(CPUInstructionOutput_BigEndian);
-	
-	logic[7:0] DataOut8;
-	assign DataOut8 = (RawCPUDataOutput >> (CPUDataAddressOffset * 8)) & 8'hFF;
-	
-	logic[15:0] DataOut16;
-	assign DataOut16 = (RawCPUDataOutput >> (CPUDataAddressOffset * 8)) & 16'hFFFF;
-	
+function[31:0] DoMemoryRead(
+	load_type   LoadType,
+	input[31:0] Data,
+	input[1:0]  Offset
+);
+	DoMemoryRead = {32{1'bx}};
+	case (LoadType)
+		LOAD_U8: begin
+			case (Offset)
+				0: DoMemoryRead = Data[7:0];
+				1: DoMemoryRead = Data[15:8];
+				2: DoMemoryRead = Data[23:16];
+				3: DoMemoryRead = Data[31:24];
+			endcase
+		end
+		LOAD_U16: begin
+			case (Offset)
+				0: DoMemoryRead = Data[15:0];
+				1: DoMemoryRead = Data[31:0];
+			endcase
+		end
+		LOAD_I32: begin
+			DoMemoryRead = Data[31:0];
+		end
+		LOAD_I8: begin
+			case (Offset)
+				0: DoMemoryRead = {{24{Data[7]}}, Data[7:0]};
+				1: DoMemoryRead = {{24{Data[15]}}, Data[15:8]};
+				2: DoMemoryRead = {{24{Data[23]}}, Data[23:16]};
+				3: DoMemoryRead = {{24{Data[31]}}, Data[31:24]};
+			endcase
+		end
+		LOAD_I16: begin
+			case (Offset)
+				0: DoMemoryRead = {{16{Data[15]}}, Data[15:0]};
+				1: DoMemoryRead = {{16{Data[31]}}, Data[31:16]};
+			endcase
+		end			
+	endcase
+endfunction
 
-	
+/*
 	always_comb begin
 		DataIn = 0;
 		ByteEnable = 0; //The storage is big-endian
@@ -463,64 +466,7 @@ module memory_controller(
 			end			
 		endcase
 	end
-	
-	logic  MainMemoryWriteEnable;
-	assign MainMemoryWriteEnable = (MemoryType == MEMORY_MAIN) & CPUDataWriteEnable;
-	
-	logic[31:0] RawCPUDataOutput_MainMemory_BigEndian;
-	
-	//a = instructions, b = data
-	main_memory MainMemory(
-		.address_a(CPUInstructionAddress[15:2]),
-		.address_b(CPUDataAddress[15:2]),
-		.byteena_b(ByteEnable),
-		.clock_a(CPUClock),
-		.clock_b(~CPUClock),
-		.data_a(0),
-		.data_b(EndianSwap(DataIn)),
-		.wren_a(1'b0),
-		.wren_b(MainMemoryWriteEnable),
-		.q_a(CPUInstructionOutput_BigEndian),
-		.q_b(RawCPUDataOutput_MainMemory_BigEndian)
-	);
-	
-	logic  GraphicsMemoryWriteEnable;
-	assign GraphicsMemoryWriteEnable = (MemoryType == MEMORY_GRAPHICS) & CPUDataWriteEnable;
-		
-	logic[31:0] RawCPUDataOutput_Graphics_BigEndian;
-	logic[31:0] RawGPUDataOutput_BigEndian;
-	
-	//a = cpu access, b = gpu access
-	graphics_memory GraphicsMemory(
-		.address_a(CPUDataAddress[16:2]),
-		.address_b(GPUAddress[16:2]),
-		.byteena_a(ByteEnable),
-		.clock_a(~CPUClock),
-		.clock_b(GPUClock),
-		.data_a(EndianSwap(DataIn)),
-		.data_b(0),
-		.wren_a(GraphicsMemoryWriteEnable),
-		.wren_b(1'b0),
-		.q_a(RawCPUDataOutput_Graphics_BigEndian),
-		.q_b(RawGPUDataOutput_BigEndian)
-	);
-	
-	logic[1:0] GraphicsOffset;
-	
-	always_ff @(posedge GPUClock) begin
-		GraphicsOffset <= GPUAddress[1:0];
-	end
-	
-	always_comb begin
-		case (GraphicsOffset)
-			2'b00: GPUData = RawGPUDataOutput_BigEndian[31:24];
-			2'b01: GPUData = RawGPUDataOutput_BigEndian[23:16];
-			2'b10: GPUData = RawGPUDataOutput_BigEndian[15:8];
-			2'b11: GPUData = RawGPUDataOutput_BigEndian[7:0];
-		endcase
-	end	
-
-endmodule
+*/
 
 function automatic logic [31:0] EndianSwap(logic [31:0] In);
     logic [31:0] Out;
@@ -532,23 +478,29 @@ function automatic logic [31:0] EndianSwap(logic [31:0] In);
 endfunction
 
 module cpu(
-	input 		Clock,
-	input       Reset,
+	input 		 		 Clock,
+	input        		 Reset,
 	
-	input       GPUClock,
-	input[31:0] GPUAddress,
-	output[7:0] GPUData,
+	output logic[31:0] MemoryAddress,
+	output logic 		 MemoryReadEnable,
+	output logic 		 MemoryWriteEnable,
+	output logic[3:0]  MemoryWriteByteEnable,
 	
-	input[1:0]   InputDevices,
-	output[31:0] ProgramCounter,
-	input[31:0]  Counter
+	input[31:0]  		 MemoryRead,
+	output logic[31:0] MemoryWrite,
+	
+	output logic[31:0] DebugOut32,
+	output logic[31:0] DebugOut
 );
-
+   cpu_state   State;
 	reg[31:0] PC;
-	reg[31:0] NextPC;
-	logic[31:0] Instruction;	
 	
-	assign ProgramCounter = PC;
+
+	
+	// Data Signals
+	logic[31:0] AluResult;
+	logic[31:0] Reg1, Reg2;
+	logic[31:0] Immediate;
 	
 	// Control Signals
 	logic            RegWrite;
@@ -561,14 +513,63 @@ module cpu(
 	load_type        LoadType;
 	alu_op           AluOp;
 	pc_source        PCSrc;
+	logic[31:0]      WriteBack;
 	
-	// Data Signals
-	logic[31:0] Reg1, Reg2;
-	logic[31:0] Immediate;
+	//Change state
+	always_ff @(posedge Clock) begin
+		if (Reset) begin
+			State <= STATE_FETCH;
+		end else begin
+			case (State)
+				STATE_FETCH: State = STATE_EXECUTE;
+				STATE_EXECUTE: State = STATE_FETCH;
+			endcase
+		end
+	end
 	
-	logic[31:0] AluResult;
-	logic[31:0] MemoryRead;
-	logic[31:0] Writeback;
+	//Memory
+	always_comb begin
+		case (State)
+			STATE_FETCH: begin
+				MemoryAddress = PC[31:2];
+				MemoryReadEnable = 1'b1;
+				MemoryWriteEnable = 1'b0;
+				MemoryWriteByteEnable = 4'b0;
+				MemoryWrite = 0;
+			end
+			STATE_EXECUTE: begin
+				MemoryAddress = AluResult[31:2];
+				MemoryReadEnable = (LoadType != LOAD_NONE);
+				MemoryWriteEnable = (StoreType != STORE_NONE);
+				MemoryWriteByteEnable = GetByteEnable(StoreType, AluResult[1:0]);
+				MemoryWrite = Reg2;
+				
+				if (LoadType == LOAD_NONE && StoreType == STORE_NONE) begin
+					MemoryAddress = 0;
+				end
+			end
+		endcase
+	end
+	
+	//Read instruction
+	reg[31:0] NextPC;
+	
+	logic RegWriteEnable;
+	//TODO: This can probably be more general
+	assign RegWriteEnable = RegWrite & (((WBSrc != WRITEBACK_MEMORY_READ) & (State == STATE_EXECUTE)) | ((WBSrc == WRITEBACK_MEMORY_READ) & (State == STATE_FETCH)));
+	
+	//Store current instruction
+	logic[31:0] InstructionLatch;
+	always @(posedge Clock) begin
+		if (State == STATE_EXECUTE) begin
+			InstructionLatch = MemoryRead;
+		end
+	end
+	
+	logic[31:0] Instruction;
+	always_comb begin
+		Instruction = (State == STATE_EXECUTE) ? MemoryRead : InstructionLatch;
+	end
 	
 	register_file Registers(
 		.Clock(Clock),
@@ -576,8 +577,8 @@ module cpu(
 		.Index1(Instruction[19:15]),
 		.Index2(Instruction[24:20]),
 		.WriteIndex(Instruction[11:7]),
-		.WriteEnable(RegWrite),
-		.WriteData(Writeback),
+		.WriteEnable(RegWriteEnable),
+		.WriteData(WriteBack),
 		.Output1(Reg1),
 		.Output2(Reg2)
 	);
@@ -595,28 +596,6 @@ module cpu(
 		.Result(AluResult)
 	);
 	
-	memory_controller Memory(
-		.CPUClock(Clock),
-		.CPUReset(Reset),
-		.CPUInstructionAddress(NextPC),
-		.CPUDataAddress(AluResult),
-		.CPUDataIn(Reg2),
-		.CPUDataWriteEnable(MemWrite),
-		
-		.CPUInstructionOutput(Instruction),
-		.CPUDataOutput(MemoryRead),
-		
-		.StoreType(StoreType),
-		.LoadType(LoadType),
-	
-		.GPUClock(GPUClock),
-		.GPUAddress(GPUAddress),
-		.GPUData(GPUData),
-		
-		.InputDevices(InputDevices),
-		.Counter(Counter)
-	);
-	
 	cpu_control Control(
 		Instruction,
 		RegWrite,
@@ -631,12 +610,13 @@ module cpu(
 		PCSrc
 	);
 	
+	//Do writeback
 	always_comb begin
-		Writeback = 0;
 		case (WBSrc)
-			WRITEBACK_ALU_RESULT:  Writeback = AluResult;
-			WRITEBACK_MEMORY_READ: Writeback = MemoryRead;
-			WRITEBACK_PC_PLUS_4:   Writeback = PC + 4;
+			WRITEBACK_ALU_RESULT:  WriteBack = AluResult;
+			WRITEBACK_MEMORY_READ: WriteBack = DoMemoryRead(LoadType, MemoryRead, AluResult[1:0]);
+			WRITEBACK_PC_PLUS_4:   WriteBack = PC + 4;
+			default:               WriteBack = 0;
 		endcase
 	end
 	
@@ -648,6 +628,7 @@ module cpu(
 	assign JumpAndLinkImmediate = {{12{Instruction[31]}}, Instruction[19:12], Instruction[20], Instruction[30:21], 1'b0};
 	
 	pc_src_select PCSelect(
+		State,
 		PC,
 		BranchImmediate,
 		JumpAndLinkImmediate,
@@ -657,12 +638,22 @@ module cpu(
 	);
 	
 	always_ff @(posedge Clock) begin
-		PC = Reset ? 0 : NextPC;
+		if (Reset) begin
+			PC = 0;
+		end else if (State == STATE_EXECUTE) begin
+			PC <= NextPC;
+		end
 	end
+	
+	assign DebugOut32 = Instruction;
+	
+	//                   [6:4]        [3]                   [2]                [1]             [0]                      
+	assign DebugOut = {LoadType, MemoryWriteByteEnable, MemoryWriteEnable, MemoryReadEnable, State};
 	
 endmodule
 
 module pc_src_select(
+	input cpu_state      State,
 	input[31:0] 			PC,
 	input[31:0]          BranchImmediate,
 	input[31:0]          JumpAndLinkImmediate,
@@ -673,15 +664,14 @@ module pc_src_select(
 );
 
     always_comb begin
-		case (PCSrc)
-			PC_SRC_PC_PLUS_4:   		NextPC = PC + 4;
-			PC_SRC_PC_PLUS_IMM: 		NextPC = PC + BranchImmediate;
-			PC_SRC_PC_PLUS_JAL_IMM: NextPC = PC + JumpAndLinkImmediate;
-			PC_SRC_ALU_RESULT:  		NextPC = AluResult;
-			PC_SRC_BRANCH:      		NextPC = AluResult[0] ? PC + BranchImmediate : PC + 4;
-			default:                NextPC = 0;
-		endcase
-		NextPC[1:0] = 2'b00;
+			case (PCSrc)
+				PC_SRC_PC_PLUS_4:   		NextPC = PC + 4;
+				PC_SRC_PC_PLUS_IMM: 		NextPC = PC + BranchImmediate;
+				PC_SRC_PC_PLUS_JAL_IMM: NextPC = PC + JumpAndLinkImmediate;
+				PC_SRC_ALU_RESULT:  		NextPC = AluResult;
+				PC_SRC_BRANCH:      		NextPC = AluResult[0] ? PC + BranchImmediate : PC + 4;
+				default:                NextPC = 0;
+			endcase
 	end
 
 endmodule

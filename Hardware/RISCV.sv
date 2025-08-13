@@ -28,7 +28,7 @@ module RISCV(
 	logic[5:0] 	SubCounter;
 	logic[31:0] MicrosecondCounter;
 	always_ff @(posedge CLOCK_50) begin
-		SubCounter = SubCounter + 1;
+		SubCounter = SubCounter + 6'b1;
 		
 		if (SubCounter == 50) begin
 			SubCounter = 0;
@@ -36,9 +36,10 @@ module RISCV(
 		end
 	end
 	
+	logic PLLCpuClock;
 	cpu_clock CPUClockGen(
 		.inclk0(CLOCK_50),
-		.c0(CPUClock)
+		.c0(PLLCpuClock)
 	);
 	
 	gpu_clock GPUClockGen(
@@ -46,24 +47,59 @@ module RISCV(
 		.c0(GPUClock)
 	);
 	
+	logic[31:0] MemoryAddress, MemoryRead, MemoryWrite_LE;
+	logic MemoryReadEnable, MemoryWriteEnable;
+	logic[1:0] MemoryWriteByteEnable_LE;
+	
+	logic[31:0] DebugOut, DebugOut32;
+	
+	assign CPUClock = PLLCpuClock;
+	
+	logic[31:0] MemoryRead_BE;
 	cpu CPU(
 		.Clock(CPUClock),
 		.Reset(SW[1]),
 	
-		.GPUClock(GPUClock),
-		.GPUAddress(GPUAddress),
-		.GPUData(GPUData),
+		.MemoryAddress(MemoryAddress),
+		.MemoryReadEnable(MemoryReadEnable),
+		.MemoryWriteEnable(MemoryWriteEnable),
+		.MemoryWriteByteEnable(MemoryWriteByteEnable_LE),
+	
+		.MemoryRead(EndianSwap32(MemoryRead_BE)),
+		.MemoryWrite(MemoryWrite_LE),
 		
-		.ProgramCounter(ProgramCounter),
-		.InputDevices(~KEY),
-		.Counter(MicrosecondCounter)
+		.DebugOut32(DebugOut32),
+		.DebugOut(DebugOut)
 	);
+	
+	assign LEDR[9:0] = DebugOut[9:0];
 	
 	//Graphics output
 	logic[9:0] X, Y;
 	color Color;
 	
-	assign GPUAddress = ((Y / 2) * 320 + (X / 2));
+	logic[31:0] GraphicsAddress;
+	logic[31:0] GraphicsAddressWord;
+	logic[1:0]  GraphicsAddressOffset;
+	assign GraphicsAddress = 32'h8000 + ((Y / 2) * 320 + (X / 2));
+	
+	//always_ff @(posedge GPUClock) begin
+	always_comb begin
+		GraphicsAddressWord = GraphicsAddress[31:2];
+		GraphicsAddressOffset = GraphicsAddress[1:0];
+	end
+	
+	logic[31:0] GpuData_32_BE;
+	
+	always_comb begin
+		case (GraphicsAddressOffset)
+			2'b00: GPUData = GpuData_32_BE[31:24];
+			2'b01: GPUData = GpuData_32_BE[23:16];
+			2'b10: GPUData = GpuData_32_BE[15:8];
+			2'b11: GPUData = GpuData_32_BE[7:0];
+		endcase
+	end
+	
 	assign Color = '{{GPUData[7:5], 1'b0}, {GPUData[4:2], 1'b0}, {GPUData[1:0], 2'b0}};
 	
 	vga_driver VGA(
@@ -79,7 +115,22 @@ module RISCV(
 		.Color(Color)
 	);
 	
-	hex_display(ProgramCounter, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5);
+	//a = cpu, b = gpu
+	memory Memory(
+		.address_a(MemoryAddress),
+		.address_b(GraphicsAddressWord),
+		.byteena_a(EndianSwap4(MemoryWriteByteEnable_LE)),
+		.clock_a(CPUClock),
+		.clock_b(GPUClock),
+		.data_a(EndianSwap32(MemoryWrite_LE)),
+		.data_b(0),
+		.wren_a(MemoryWriteEnable),
+		.wren_b(0),
+		.q_a(MemoryRead_BE),
+		.q_b(GpuData_32_BE)
+	);
+	
+	hex_display Display(GpuData_32_BE, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5);
 		
 endmodule
 
