@@ -9,7 +9,7 @@ function automatic logic [31:0] EndianSwap32(logic [31:0] In);
     return Out;
 endfunction
 
-function automatic logic [31:0] EndianSwap4(logic [3:0] In);
+function automatic logic [3:0] EndianSwap4(logic [3:0] In);
     logic [3:0] Out;
 	 Out = {In[0], In[1], In[2], In[3]};
     return Out;

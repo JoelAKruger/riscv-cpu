@@ -20,6 +20,10 @@ int get_high_precision_timer() {
     return *(volatile int*) 0x40100;
 }
 
+int get_v_sync() {
+    return *(volatile int*) 0x40104;
+}
+
 #define SCREEN_WIDTH   320
 #define SCREEN_HEIGHT  240
 #define PADDLE_WIDTH     4
@@ -41,7 +45,7 @@ void main(void) {
         .Width = SCREEN_WIDTH,
         .Height = SCREEN_HEIGHT,
         .PixelsPerScanline = SCREEN_WIDTH,
-        .Pixels = (u8*)0x20000
+        .Pixels = (u8*)0x8000
     };
     
     int player_y = SCREEN_HEIGHT / 2 - PADDLE_HEIGHT / 2;
@@ -64,12 +68,7 @@ void main(void) {
     
     while (1) {
         // Frame limiting
-        
-        int current_time = get_high_precision_timer();
-        int elapsed = current_time - last_time;
-        if (elapsed < frame_duration_us) continue;
-        last_time = current_time;
-        
+        while (get_v_sync() != 0);     
         
         // Erase previous positions
         DrawRect(Screen, 10, prev_player_y, PADDLE_WIDTH, PADDLE_HEIGHT, COLOR_BG);

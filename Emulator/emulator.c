@@ -619,7 +619,7 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE _, LPWSTR CommandLine, int Sho
     emulator Emulator = { 0 };
     HANDLE EmulatorThread = LoadEmulator(&Emulator, "main.bin");
     
-    void* Bits = Emulator.Memory + 0x20000;
+    void* Bits = Emulator.Memory + 0x8000;
     
     HDC WindowDC = GetDC(Window);
     

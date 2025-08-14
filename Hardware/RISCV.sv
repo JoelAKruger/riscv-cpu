@@ -47,15 +47,14 @@ module RISCV(
 		.c0(GPUClock)
 	);
 	
-	logic[31:0] MemoryAddress, MemoryRead, MemoryWrite_LE;
-	logic MemoryReadEnable, MemoryWriteEnable;
-	logic[3:0] MemoryWriteByteEnable_LE;
+	logic[31:0] MemoryAddress, MemoryRead, MemoryWrite;
+	logic MemoryWriteEnable, MemoryReadEnable;
+	logic[3:0] MemoryWriteByteEnable;
 	
 	logic[31:0] DebugOut, DebugOut32;
 	
 	assign CPUClock = PLLCpuClock;
 	
-	logic[31:0] MemoryRead_BE;
 	cpu CPU(
 		.Clock(CPUClock),
 		.Reset(SW[1]),
@@ -63,10 +62,10 @@ module RISCV(
 		.MemoryAddress(MemoryAddress),
 		.MemoryReadEnable(MemoryReadEnable),
 		.MemoryWriteEnable(MemoryWriteEnable),
-		.MemoryWriteByteEnable(MemoryWriteByteEnable_LE),
+		.MemoryWriteByteEnable(MemoryWriteByteEnable),
 	
-		.MemoryRead(EndianSwap32(MemoryRead_BE)),
-		.MemoryWrite(MemoryWrite_LE),
+		.MemoryRead(MemoryRead),
+		.MemoryWrite(MemoryWrite),
 		
 		.DebugOut32(DebugOut32),
 		.DebugOut(DebugOut)
@@ -86,14 +85,14 @@ module RISCV(
 		GraphicsAddressOffset = GraphicsAddress[1:0];
 	end
 	
-	logic[31:0] GpuData_32_BE;
+	logic[31:0] GPUData32;
 	
 	always_comb begin
 		case (GraphicsAddressOffset)
-			2'b00: GPUData = GpuData_32_BE[31:24];
-			2'b01: GPUData = GpuData_32_BE[23:16];
-			2'b10: GPUData = GpuData_32_BE[15:8];
-			2'b11: GPUData = GpuData_32_BE[7:0];
+			2'b00: GPUData = GPUData32[7:0];
+			2'b01: GPUData = GPUData32[15:8];
+			2'b10: GPUData = GPUData32[23:16];
+			2'b11: GPUData = GPUData32[31:24];
 		endcase
 	end
 	
@@ -112,23 +111,122 @@ module RISCV(
 		.Color(Color)
 	);
 	
+	//Main Memory
 	//a = cpu, b = gpu
-	memory Memory(
-		.address_a(MemoryAddress),
-		.address_b(GraphicsAddress[31:2]),
-		.byteena_a(EndianSwap4(MemoryWriteByteEnable_LE)),
-		.clock_a(CPUClock),
-		.clock_b(GPUClock),
-		.data_a(EndianSwap32(MemoryWrite_LE)),
-		.data_b(0),
-		.wren_a(MemoryWriteEnable),
-		.wren_b(0),
-		.q_a(MemoryRead_BE),
-		.q_b(GpuData_32_BE)
+	main_memory MainMemory (
+		.Clock(CPUClock),
+		.Address(MemoryAddress),
+		.WriteEnable(MemoryWriteEnable),
+		.WriteByteEnable(MemoryWriteByteEnable),
+		.MemoryWrite(MemoryWrite),
+		.MemoryRead(MemoryRead),
+		
+		.GClock(GPUClock),
+		.GAddress(GraphicsAddress[31:2]),
+		.GData(GPUData32)
+	);
+	
+	pio_input #(.PIO_ADDRESS(32'h40000)) KeyA (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryRead(MemoryRead),
+		 .Value(~KEY[0])
+	);
+	
+	pio_input #(.PIO_ADDRESS(32'h40004)) KeyB (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryRead(MemoryRead),
+		 .Value(~KEY[1])
+	);
+	
+	pio_input #(.PIO_ADDRESS(32'h40100)) Timer (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryRead(MemoryRead),
+		 .Value(MicrosecondCounter)
+	);
+	
+	pio_input #(.PIO_ADDRESS(32'h40104)) VSync (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryRead(MemoryRead),
+		 .Value(VGA_VS)
 	);
 	
 	hex_display Display(DebugOut32, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5);
 		
+endmodule
+
+module pio_input #(
+    parameter logic [31:0] PIO_ADDRESS
+) 
+(
+    input  logic        Clock,
+    input  logic [31:0] Address,
+    output logic [31:0] MemoryRead,
+    input  logic [31:0] Value
+);
+
+    logic [31:0] LatchedAddress;
+
+    always_ff @(posedge Clock) begin
+        LatchedAddress <= Address;
+    end
+
+    always_comb begin
+        if (LatchedAddress == (PIO_ADDRESS / 4)) begin
+            MemoryRead = Value;
+        end else begin
+            MemoryRead = {32{1'bz}};
+        end
+    end
+
+endmodule
+	
+module main_memory (
+	input Clock,
+	input[31:0] Address,
+	input WriteEnable,
+	input[3:0] WriteByteEnable,
+	input[31:0] MemoryWrite,
+	output[31:0] MemoryRead,
+	
+	input GClock,
+	input[31:0] GAddress,
+	output[31:0] GData
+);
+	logic[31:0] MemoryRead_BE, GMemoryRead_BE;
+	
+	logic[31:0] LatchedAddress;
+	always_ff @(posedge Clock) begin
+		LatchedAddress = Address;
+	end
+	
+	memory Memory(
+		.address_a(Address),
+		.address_b(GAddress),
+		.byteena_a(EndianSwap4(WriteByteEnable)),
+		.clock_a(Clock),
+		.clock_b(GClock),
+		.data_a(EndianSwap32(MemoryWrite)),
+		.data_b(0),
+		.wren_a(WriteEnable & (Address < 40960)),
+		.wren_b(0),
+		.q_a(MemoryRead_BE),
+		.q_b(GMemoryRead_BE)
+	);
+	
+	always_comb begin
+		if (LatchedAddress < 40960) begin
+			MemoryRead = EndianSwap32(MemoryRead_BE);
+		end else begin
+			MemoryRead = {32{1'bz}};
+		end
+	end
+
+	assign GData = EndianSwap32(GMemoryRead_BE);
+	
 endmodule
 
 module hex_display(
