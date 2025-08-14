@@ -25,7 +25,7 @@ void main(void)
         .ColorBg = COLOR_BLACK
     };
     
-	for (u32 I = 0; ; I++)
+    for (u32 I = 0; ; I++)
     {
         ConsoleWrite(&Console, "Bit count of %d is %d\n", I, BitCount(I));
     }

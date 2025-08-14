@@ -49,7 +49,7 @@ module RISCV(
 	
 	logic[31:0] MemoryAddress, MemoryRead, MemoryWrite_LE;
 	logic MemoryReadEnable, MemoryWriteEnable;
-	logic[1:0] MemoryWriteByteEnable_LE;
+	logic[3:0] MemoryWriteByteEnable_LE;
 	
 	logic[31:0] DebugOut, DebugOut32;
 	
@@ -79,13 +79,10 @@ module RISCV(
 	color Color;
 	
 	logic[31:0] GraphicsAddress;
-	logic[31:0] GraphicsAddressWord;
-	logic[1:0]  GraphicsAddressOffset;
 	assign GraphicsAddress = 32'h8000 + ((Y / 2) * 320 + (X / 2));
 	
-	//always_ff @(posedge GPUClock) begin
-	always_comb begin
-		GraphicsAddressWord = GraphicsAddress[31:2];
+	logic[1:0]  GraphicsAddressOffset;
+	always_ff @(posedge GPUClock) begin
 		GraphicsAddressOffset = GraphicsAddress[1:0];
 	end
 	
@@ -118,7 +115,7 @@ module RISCV(
 	//a = cpu, b = gpu
 	memory Memory(
 		.address_a(MemoryAddress),
-		.address_b(GraphicsAddressWord),
+		.address_b(GraphicsAddress[31:2]),
 		.byteena_a(EndianSwap4(MemoryWriteByteEnable_LE)),
 		.clock_a(CPUClock),
 		.clock_b(GPUClock),
@@ -130,7 +127,7 @@ module RISCV(
 		.q_b(GpuData_32_BE)
 	);
 	
-	hex_display Display(GpuData_32_BE, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5);
+	hex_display Display(DebugOut32, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5);
 		
 endmodule
 

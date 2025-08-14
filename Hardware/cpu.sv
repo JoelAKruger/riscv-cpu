@@ -408,6 +408,19 @@ function[31:0] DoMemoryRead(
 	endcase
 endfunction
 
+function automatic logic [31:0] GetMemoryWrite (
+    input logic [31:0] Data,
+    input logic [1:0]  Offset,
+    input store_type   StoreType
+);
+    case (StoreType)
+        STORE_8:  GetMemoryWrite = (Data & 32'hFF) << (Offset * 8);
+        STORE_16: GetMemoryWrite = (Data & 32'hFFFF) << (Offset * 8);
+        STORE_32: GetMemoryWrite = Data;
+        default:  GetMemoryWrite = 32'b0;
+    endcase
+endfunction
+
 /*
 	always_comb begin
 		DataIn = 0;
@@ -542,7 +555,7 @@ module cpu(
 				MemoryReadEnable = (LoadType != LOAD_NONE);
 				MemoryWriteEnable = (StoreType != STORE_NONE);
 				MemoryWriteByteEnable = GetByteEnable(StoreType, AluResult[1:0]);
-				MemoryWrite = Reg2;
+				MemoryWrite = GetMemoryWrite(Reg2, AluResult[1:0], StoreType);
 				
 				if (LoadType == LOAD_NONE && StoreType == STORE_NONE) begin
 					MemoryAddress = 0;
@@ -645,9 +658,9 @@ module cpu(
 		end
 	end
 	
-	assign DebugOut32 = Instruction;
+	assign DebugOut32 = PC;
 	
-	//                   [6:4]        [3]                   [2]                [1]             [0]                      
+	//                   [9:7]        [6:3]                   [2]                [1]             [0]                      
 	assign DebugOut = {LoadType, MemoryWriteByteEnable, MemoryWriteEnable, MemoryReadEnable, State};
 	
 endmodule

@@ -11,6 +11,7 @@ _start:
     #lw t2, 0(t0)
     #lbu t2, 0(t0)
 
+
     nop
     nop
     nop
@@ -52,6 +53,8 @@ _start:
     nop
     nop
     li sp, 0x8000
+    li t0, 43
+    sw t0, 0(sp)
 	
     call main
     j .
