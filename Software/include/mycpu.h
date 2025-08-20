@@ -61,3 +61,6 @@ typedef struct
     volatile u32* MOSI;
     volatile u32* MISO;
 } spi;
+
+extern console* GlobalConsole;
+#define printf(...) ConsoleWrite(GlobalConsole, __VA_ARGS__)

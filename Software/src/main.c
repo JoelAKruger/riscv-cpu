@@ -1,5 +1,6 @@
 #include "mycpu.c"
 #include "graphics.c"
+#include "w5100.c"
 
 int __errno;
 
@@ -18,62 +19,40 @@ void set_output(int value) {
     *(volatile int*) 0x40108 = value;
 }
 
-void SPIWriteThenRead(spi* SPI, u8* WriteData, u32 WriteByteCount, u8* ReadData, u32 ReadByteCount)
-{
-    // Assert chip select (active low)
-    *SPI->CS = 0;
-    
-    // Write phase
-    for (u32 i = 0; i < WriteByteCount; i++)
-    {
-        u8 data = WriteData[i];
-        
-        // Send 8 bits, MSB first
-        for (int bit = 7; bit >= 0; bit--)
-        {
-            // Set MOSI
-            *SPI->MOSI = (data >> bit) & 1;
-            
-            // Clock pulse
-            *SPI->SCLK = 1;
-            // Small delay for timing (may need adjustment based on hardware)
-            for (volatile int d = 0; d < 10; d++);
-            *SPI->SCLK = 0;
-        }
-    }
-    
-    // Read phase
-    for (u32 i = 0; i < ReadByteCount; i++)
-    {
-        u8 data = 0;
-        
-        // Read 8 bits, MSB first
-        for (int bit = 7; bit >= 0; bit--)
-        {
-            // Clock pulse
-            *SPI->SCLK = 1;
-            // Small delay for timing (may need adjustment based on hardware)
-            for (volatile int d = 0; d < 10; d++);
-            
-            // Read MISO
-            data |= (*SPI->MISO & 1) << bit;
-            
-            *SPI->SCLK = 0;
-        }
-        
-        ReadData[i] = data;
-    }
-    
-    // Deassert chip select
-    *SPI->CS = 1;
-}
+console* GlobalConsole;
 
-u8 W5100_Read(spi* SPI, u32 Register)
+#define printf(...) ConsoleWrite(GlobalConsole, __VA_ARGS__)
+
+typedef struct {
+    u8 DestMAC[6];
+    u8 SourceMAC[6];
+    u8 EtherType[2];
+} ethernet_frame;
+
+void HandleEthernetFrame(u8* Data, u32 Bytes)
 {
-    u8 Result = 0;
-    u8 Data[3] = {0x0F,  (u8) (Register >> 8), (u8) Register };
-    SPIWriteThenRead(SPI, Data, 3, &Result, 1);
-    return Result;
+    ethernet_frame* Frame = (ethernet_frame*) Data;
+    
+    printf("Dest MAC: ");
+    for (int I = 0; I < 6; I++)
+    {
+        printf("%x ", Frame->DestMAC[I]);
+    }
+    printf("\n");
+    
+    printf("Source MAC: ");
+    for (int I = 0; I < 6; I++)
+    {
+        printf("%x ", Frame->SourceMAC[I]);
+    }
+    printf("\n");
+    
+    printf("EtherType: ");
+    for (int I = 0; I < 2; I++)
+    {
+        printf("%x ", Frame->EtherType[I]);
+    }
+    printf("\n");
 }
 
 void main(void)
@@ -91,6 +70,8 @@ void main(void)
 		.ColorBg = COLOR_BLACK
 	};
     
+    GlobalConsole = &Console;
+    
 	spi SPI = {
 		.CS   = (u32*)0x40114,
 		.SCLK = (u32*)0x4010c,
@@ -98,12 +79,23 @@ void main(void)
 		.MISO = (u32*)0x40118
 	};
     
-    u8 Data[] = { 'A' };
+    W5100_SetupMACRaw(&SPI);
     
-	while (1)
-	{
-        u32 Data = W5100_Read(&SPI, 0x0018);
-        ConsoleWrite(&Console, "%x\n", Data);
+    u8 ReceivedData[2048];
+    
+    while (1)
+    {
+        int DataReceived = W5100_DataReceived(&SPI);
+        
+        if (DataReceived)
+        {
+            int BytesReceived = W5100_Receive(&SPI, ReceivedData, sizeof(ReceivedData));
+            
+            if (BytesReceived != -1)
+            {
+                HandleEthernetFrame(ReceivedData, BytesReceived);
+            }
+        }
     }
     
 }
