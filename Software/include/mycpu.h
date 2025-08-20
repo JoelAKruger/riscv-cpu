@@ -53,3 +53,11 @@ typedef struct
     
     u8 Data[]; //Flexible array member
 }  pc_screen_font_v1;
+
+typedef struct
+{
+    volatile u32* CS;
+    volatile u32* SCLK;
+    volatile u32* MOSI;
+    volatile u32* MISO;
+} spi;

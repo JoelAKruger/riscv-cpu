@@ -14,7 +14,10 @@ module RISCV(
 	output[6:0] HEX2, 
 	output[6:0] HEX3, 
 	output[6:0] HEX4, 
-	output[6:0] HEX5
+	output[6:0] HEX5,
+	
+	inout[12:0]	GPIO,
+	inout[15:0] ARDUINO_IO
 );
 	
 	logic CPUClock;
@@ -154,6 +157,41 @@ module RISCV(
 		 .Value(VGA_VS)
 	);
 	
+	pio_output #(.PIO_ADDRESS(32'h40108)) Out (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryWrite(MemoryWrite),
+		 .Q(GPIO[0])
+	);
+	
+	pio_output #(.PIO_ADDRESS(32'h4010C)) Sck (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryWrite(MemoryWrite),
+		 .Q(ARDUINO_IO[13])
+	);
+	
+	pio_output #(.PIO_ADDRESS(32'h40110)) Mosi (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryWrite(MemoryWrite),
+		 .Q(ARDUINO_IO[11])
+	);
+	
+	pio_output #(.PIO_ADDRESS(32'h40114)) Ss (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryWrite(MemoryWrite),
+		 .Q(ARDUINO_IO[10])
+	);
+	
+	pio_input #(.PIO_ADDRESS(32'h40118)) Miso (
+		 .Clock(CPUClock),
+		 .Address(MemoryAddress),
+		 .MemoryRead(MemoryRead),
+		 .Value(ARDUINO_IO[12])
+	);
+	
 	hex_display Display(DebugOut32, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5);
 		
 endmodule
@@ -180,6 +218,24 @@ module pio_input #(
         end else begin
             MemoryRead = {32{1'bz}};
         end
+    end
+
+endmodule
+
+module pio_output #(
+    parameter logic [31:0] PIO_ADDRESS
+) 
+(
+    input  logic        Clock,
+    input  logic [31:0] Address,
+    input  logic [31:0] MemoryWrite,
+    output logic Q
+);
+
+    always_ff @(posedge Clock) begin
+        if (Address == (PIO_ADDRESS / 4)) begin
+				Q = MemoryWrite[0];
+		  end
     end
 
 endmodule
