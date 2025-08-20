@@ -13,6 +13,30 @@ memset(void* Dest_, int Value, u32 Count)
 	}
 }
 
+int memcmp(void *S1, void *S2, u32 N)
+{
+    u8* P1 = S1, * P2 = S2;
+    for (u32 I = 0; I < N; I++)
+    {
+        if (P1[I] != P2[I])
+        {
+            return P1[I] - P2[I];
+        }
+    }
+    return 0;
+}
+
+void memcpy(void* Dest_, void* Src_, u32 N)
+{
+    u8* Dest = (u8*)Dest_;
+    u8* Src = (u8*)Src_;
+    
+    for (int I = 0; I < N; I++)
+    {
+        Dest[I] = Src[I];
+    }
+}
+
 static void
 ClearScreen(screen_buffer Screen, u8 Color)
 {

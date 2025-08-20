@@ -111,6 +111,14 @@ void W5100_ReadBytes(spi* SPI, u8* Dest, u16 Source, u32 Bytes)
     }
 }
 
+void W5100_WriteBytes(spi* SPI, u16 Dest, u8* Source, u32 Bytes)
+{
+    for (u32 I = 0; I < Bytes; I++)
+    {
+        W5100_Write(SPI, Dest++, Source[I]);
+    }
+}
+
 int W5100_Receive(spi* SPI, u8* Buffer, u32 BufferSize)
 {
     int RX_Mask = 0x7FF;
@@ -161,4 +169,35 @@ int W5100_Receive(spi* SPI, u8* Buffer, u32 BufferSize)
     W5100_Write(SPI, 0x0401, 0x40);
     
     return DataSize;
+}
+
+int W5100_Send(spi* SPI, u8* Buffer, u32 SendSize)
+{
+    int TX_Mask = 0x7FF;
+    int TX_Base = 0x4000;
+    
+    while (W5100_Read16(SPI, 0x0420) < SendSize) {}
+    
+    int Offset = W5100_Read16(SPI, 0x0424) & TX_Mask;
+    
+    if ((Offset + SendSize) > (TX_Base + 1))
+    {
+        int UpperBytes = (TX_Mask + 1) - Offset;
+        W5100_WriteBytes(SPI, TX_Base + Offset, Buffer, UpperBytes);
+        Buffer += UpperBytes;
+        
+        int RemainingBytes = SendSize - UpperBytes;
+        W5100_WriteBytes(SPI, TX_Base, Buffer, RemainingBytes);
+    }
+    else
+    {
+        W5100_WriteBytes(SPI, TX_Base + Offset, Buffer, SendSize);
+    }
+    
+    int WritePointer = W5100_Read16(SPI, 0x0424) + SendSize;
+    W5100_Write16(SPI, 0x0424, WritePointer);
+    
+    W5100_Write(SPI, 0x0401, 0x20);
+    
+    return 0;
 }
