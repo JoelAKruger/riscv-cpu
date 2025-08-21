@@ -23,10 +23,25 @@ console* GlobalConsole;
 
 #define printf(...) ConsoleWrite(GlobalConsole, __VA_ARGS__)
 
+u16 htons(u16 Value)
+{
+    return ((Value & 0xFF00) >> 8) | ((Value & 0x00FF) << 8);
+}
+
+typedef struct
+{
+    u8 Bytes[6];
+} mac_address;
+
+int MacAddressesAreEqual(mac_address* A, mac_address* B)
+{
+    return (memcmp(A, B, 6) == 0);
+}
+
 typedef struct 
 {
-    u8 DestMAC[6];
-    u8 SourceMAC[6];
+    mac_address DestMAC;
+    mac_address SourceMAC;
     u8 EtherType[2];
 } ethernet_frame;
 
@@ -39,9 +54,9 @@ typedef struct __attribute__((packed))
     u8 HardwareLength;
     u8 ProtocolLength;
     u16 Operation;
-    u8 SenderHardwareAddress[6];
+    mac_address SenderHardwareAddress;
     u32 SenderProtocolAddress;
-    u8 TargetHardwareAddress[6];
+    mac_address TargetHardwareAddress;
     u32 TargetProtocolAddress;
 } address_resolution_protocol_frame;
 
@@ -69,36 +84,39 @@ typedef struct __attribute__((packed))
 
 _Static_assert(sizeof(ipv4_frame) == 34, "");
 
-/*
-u32 CalculateEthernetChecksum(u8* Data, u32 Bytes)
-{
-    u32 CRCPoly = 0x04C11DB7;
-    u32 CRC = 0xFFFFFFFF;
-    while (Bytes--) 
-    {
-        CRC^= (*Data++) << 24;
-        for (int I = 8; I >= 0; I--) 
-        {
-            CRC = (CRC & 0x80000000) ? (CRC << 1) ^ CRCPoly : CRC << 1;
-        }
+u16 CalculateInternetChecksum(u8* Data, u32 Length) {
+    u32 Sum = 0;
+    
+    while (Length > 1) {
+        Sum += (Data[0] << 8) | Data[1];
+        Data += 2;
+        Length -= 2;
     }
-    return ~CRC;
+    
+    if (Length == 1) {
+        Sum += (Data[0] << 8);
+    }
+    
+    while (Sum >> 16) {
+        Sum = (Sum & 0xFFFF) + (Sum >> 16);
+    }
+    
+    return ~Sum;
 }
-*/
 
 void PrintEthernetFrame(ethernet_frame* Frame)
 {
     printf("Dest MAC: ");
-    for (int I = 5; I >= 6; I--)
+    for (int I = 5; I >= 0; I--)
     {
-        printf("%x ", Frame->DestMAC[I]);
+        printf("%x ", Frame->DestMAC.Bytes[I]);
     }
     printf("\n");
     
     printf("Source MAC: ");
     for (int I = 5; I >= 0; I--)
     {
-        printf("%x ", Frame->SourceMAC[I]);
+        printf("%x ", Frame->SourceMAC.Bytes[I]);
     }
     printf("\n");
     
@@ -110,8 +128,19 @@ void PrintEthernetFrame(ethernet_frame* Frame)
     printf("\n");
 }
 
-u8 MacAddress[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
-u8 BroadcastMAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+void PrintMacAddress(mac_address* MAC)
+{
+    printf("MAC: ");
+    for (int I = 5; I >= 0; I--)
+    {
+        printf("%x ", MAC->Bytes[I]);
+    }
+    printf("\n");
+}
+
+mac_address MacAddress = {{0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}};
+mac_address BroadcastMAC = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};
 u32 IPAddress = (10) | (0 << 8) | (0 << 16) | (20 << 24); //10.0.0.20
 
 void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
@@ -133,8 +162,8 @@ void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
         if (ARP->Operation == 0x0100)
         {
             address_resolution_protocol_frame Response = {};
-            memcpy(Response.EtherFrame.DestMAC, Frame->SourceMAC, 6);
-            memcpy(Response.EtherFrame.SourceMAC, MacAddress, 6);
+            Response.EtherFrame.DestMAC = Frame->SourceMAC;
+            Response.EtherFrame.SourceMAC = MacAddress;
             Response.EtherFrame.EtherType[0] = 0x08;
             Response.EtherFrame.EtherType[1] = 0x06;
             
@@ -144,9 +173,9 @@ void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
             Response.ProtocolLength = 4;
             Response.Operation = 0x0200;
             Response.TargetProtocolAddress = ARP->SenderProtocolAddress;
-            memcpy(Response.TargetHardwareAddress, ARP->SenderHardwareAddress, 6);
+            Response.TargetHardwareAddress = ARP->SenderHardwareAddress;
             Response.SenderProtocolAddress = IPAddress;
-            memcpy(Response.SenderHardwareAddress, MacAddress, 6);
+            Response.SenderHardwareAddress = MacAddress;
             
             W5100_Send(SPI, (u8*) &Response, sizeof(Response));
             
@@ -166,54 +195,47 @@ typedef struct __attribute__((packed))
     u8 Type;
     u8 Code;
     u16 Checksum;
+    u16 Identifier;
+    u16 Sequence;
 } icmp_header;
 
 typedef struct
 {
-    ethernet_frame EtherFrame;
-    ipv4_frame IP;
+    ipv4_frame IPFrame;
     icmp_header ICMP;
 } icmp_reply_frame;
 
-_Static_assert(sizeof(icmp_reply_frame) == sizeof(ethernet_frame) + sizeof(ipv4_frame) + sizeof(icmp_header), "");
+_Static_assert(sizeof(icmp_reply_frame) == sizeof(ipv4_frame) + sizeof(icmp_header), "");
 
-void HandleICMP(spi* SPI, ipv4_frame* IP, u8* Data, u32 DataLength)
+void HandleICMP(spi* SPI, ipv4_frame* IP, u32 FrameLength, u32 DataOffset, u32 DataLength)
 {
     if (DataLength < sizeof(icmp_header))
     {
         return;
     }
     
-    icmp_header* ICMP = (icmp_header*)Data;
+    icmp_header* ICMP = (icmp_header*)((u32)IP + DataOffset);
     
     // Echo request
     if (ICMP->Type == 0x8 &&
         ICMP->Code == 0x0)
     {
-        icmp_reply_frame Response = {};
-        memcpy(Response.EtherFrame.DestMAC, IP->EtherFrame.SourceMAC, 6);
-        memcpy(Response.EtherFrame.SourceMAC, MacAddress, 6);
-        Response.EtherFrame.EtherType[0] = 0x08; //ipv4
-        Response.EtherFrame.EtherType[1] = 0x00;
+        //Swap MAC address of ethernet header
+        mac_address SourceMAC = IP->EtherFrame.SourceMAC;
+        IP->EtherFrame.SourceMAC = IP->EtherFrame.DestMAC;
+        IP->EtherFrame.DestMAC = SourceMAC;
         
-        Response.IP.Version = 4;
-        Response.IP.InternetHeaderLength = 5;
-        Response.IP.TotalLength = sizeof(Response.IP) + sizeof(Response.ICMP);
-        Response.IP.TTL = 100;
-        Response.IP.Protocol = 0x1; //icmp
-        Response.IP.SourceAddress = IPAddress;
-        Response.IP.DestAddress = IP->SourceAddress;
+        //Swap IP addresses of ipv4 header
+        u32 SourceIP = IP->SourceAddress;
+        IP->SourceAddress = IP->DestAddress;
+        IP->DestAddress = SourceIP;
         
-        Response.ICMP.Type = 0; //echo reply
+        ICMP->Type = 0; //echo reply
+        ICMP->Checksum = 0;
         
-        W5100_Send(SPI, (u8*) &Response, sizeof(Response));
-        printf("Echo reply\n");
+        ICMP->Checksum = htons(CalculateInternetChecksum((u8*)ICMP, DataLength));
         
-        u8* Data = (u8*)&Response;
-        for (int I = 0; I < sizeof(Response); I++)
-        {
-            printf("%x ", Data[I]);
-        }
+        W5100_Send(SPI, (u8*) IP, FrameLength);
     }
 }
 
@@ -226,7 +248,6 @@ void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
     
     ipv4_frame* IP = (ipv4_frame*)Frame;
     
-    u8* Data = (u8*)IP + sizeof(ipv4_frame);
     int DataLength = FrameLength - sizeof(ipv4_frame);
     
     if (DataLength < 0)
@@ -243,7 +264,7 @@ void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
             case 0x1:
             {
                 //TODO: Use length from IP header
-                HandleICMP(SPI, IP, Data, DataLength);
+                HandleICMP(SPI, IP, FrameLength, sizeof(ipv4_frame), DataLength);
             }
         }
     }
@@ -254,12 +275,16 @@ void HandleEthernetFrame(spi* SPI, u8* Data, u32 Bytes)
     ethernet_frame* Frame = (ethernet_frame*)Data;
     u32 FrameLength = Bytes;
     
-    if (memcmp(Frame->DestMAC, BroadcastMAC, 6) == 0 ||
-        memcmp(Frame->DestMAC, MacAddress, 6) == 0)
+    printf("ether\n");
+    PrintMacAddress(&Frame->DestMAC);
+    PrintMacAddress(&MacAddress);
+    if (MacAddressesAreEqual(&Frame->DestMAC, &BroadcastMAC) ||
+        MacAddressesAreEqual(&Frame->DestMAC, &MacAddress))
     {
         // Address Resolution Protocol
         if (Frame->EtherType[0] == 0x08 && Frame->EtherType[1] == 0x06)
         {
+            
             HandleARP(SPI, Frame, FrameLength);
         }
         
