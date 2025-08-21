@@ -3,11 +3,10 @@
 u8 VGAFontBytes[] __attribute__((aligned(4)))  = 
 #include "zap-vga16.psf_Array.h"
 
-static void 
-memset(void* Dest_, int Value, u32 Count)
+void memset(void* Dest_, int Value, u32 N)
 {
 	u8* Dest = (u8*)Dest_;
-	for (u32 I = 0; I < Count; I++)
+	for (u32 I = 0; I < N; I++)
 	{
 		Dest[I] = (u8)Value;
 	}

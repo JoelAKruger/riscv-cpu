@@ -33,6 +33,7 @@ typedef struct
 typedef struct __attribute__((packed))
 {
     ethernet_frame EtherFrame;
+    
     u16 HardwareType;
     u16 ProtocolType;
     u8 HardwareLength;
@@ -45,6 +46,28 @@ typedef struct __attribute__((packed))
 } address_resolution_protocol_frame;
 
 _Static_assert(sizeof(address_resolution_protocol_frame) == 42, "");
+
+typedef struct __attribute__((packed))
+{
+    ethernet_frame EtherFrame;
+    
+    u8 InternetHeaderLength: 4;
+    u8 Version : 4;
+    u8 ECN : 2;
+    u8 DSCP : 6;
+    u16 TotalLength;
+    u16 Identification;
+    u16 FragmentOffset : 13;
+    u8 Flags : 3;
+    u8 TTL;
+    u8 Protocol;
+    u16 HeaderChecksum;
+    u32 SourceAddress;
+    u32 DestAddress;
+    
+} ipv4_frame;
+
+_Static_assert(sizeof(ipv4_frame) == 34, "");
 
 /*
 u32 CalculateEthernetChecksum(u8* Data, u32 Bytes)
@@ -89,11 +112,147 @@ void PrintEthernetFrame(ethernet_frame* Frame)
 
 u8 MacAddress[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
 u8 BroadcastMAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-u8 IPAddress[4] = {10, 0, 0, 20};
+u32 IPAddress = (10) | (0 << 8) | (0 << 16) | (20 << 24); //10.0.0.20
+
+void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
+{
+    if (Bytes < sizeof(address_resolution_protocol_frame))
+    {
+        return;
+    }
+    
+    address_resolution_protocol_frame* ARP = (address_resolution_protocol_frame*)Frame;
+    
+    if (ARP->HardwareType == 0x0100 &&
+        ARP->ProtocolType == 0x0008 &&
+        ARP->HardwareLength == 6 &&
+        ARP->ProtocolLength == 4 && 
+        ARP->TargetProtocolAddress == IPAddress)
+    {
+        //ARP Request
+        if (ARP->Operation == 0x0100)
+        {
+            address_resolution_protocol_frame Response = {};
+            memcpy(Response.EtherFrame.DestMAC, Frame->SourceMAC, 6);
+            memcpy(Response.EtherFrame.SourceMAC, MacAddress, 6);
+            Response.EtherFrame.EtherType[0] = 0x08;
+            Response.EtherFrame.EtherType[1] = 0x06;
+            
+            Response.HardwareType = 0x0100;
+            Response.ProtocolType = 0x0008;
+            Response.HardwareLength = 6;
+            Response.ProtocolLength = 4;
+            Response.Operation = 0x0200;
+            Response.TargetProtocolAddress = ARP->SenderProtocolAddress;
+            memcpy(Response.TargetHardwareAddress, ARP->SenderHardwareAddress, 6);
+            Response.SenderProtocolAddress = IPAddress;
+            memcpy(Response.SenderHardwareAddress, MacAddress, 6);
+            
+            W5100_Send(SPI, (u8*) &Response, sizeof(Response));
+            
+            printf("ARP request\n");
+        }
+        
+        //ARP Response
+        else if (ARP->Operation == 0x0200)
+        {
+            //TODO: add to cache
+        }
+    }
+}
+
+typedef struct __attribute__((packed))
+{
+    u8 Type;
+    u8 Code;
+    u16 Checksum;
+} icmp_header;
+
+typedef struct
+{
+    ethernet_frame EtherFrame;
+    ipv4_frame IP;
+    icmp_header ICMP;
+} icmp_reply_frame;
+
+_Static_assert(sizeof(icmp_reply_frame) == sizeof(ethernet_frame) + sizeof(ipv4_frame) + sizeof(icmp_header), "");
+
+void HandleICMP(spi* SPI, ipv4_frame* IP, u8* Data, u32 DataLength)
+{
+    if (DataLength < sizeof(icmp_header))
+    {
+        return;
+    }
+    
+    icmp_header* ICMP = (icmp_header*)Data;
+    
+    // Echo request
+    if (ICMP->Type == 0x8 &&
+        ICMP->Code == 0x0)
+    {
+        icmp_reply_frame Response = {};
+        memcpy(Response.EtherFrame.DestMAC, IP->EtherFrame.SourceMAC, 6);
+        memcpy(Response.EtherFrame.SourceMAC, MacAddress, 6);
+        Response.EtherFrame.EtherType[0] = 0x08; //ipv4
+        Response.EtherFrame.EtherType[1] = 0x00;
+        
+        Response.IP.Version = 4;
+        Response.IP.InternetHeaderLength = 5;
+        Response.IP.TotalLength = sizeof(Response.IP) + sizeof(Response.ICMP);
+        Response.IP.TTL = 100;
+        Response.IP.Protocol = 0x1; //icmp
+        Response.IP.SourceAddress = IPAddress;
+        Response.IP.DestAddress = IP->SourceAddress;
+        
+        Response.ICMP.Type = 0; //echo reply
+        
+        W5100_Send(SPI, (u8*) &Response, sizeof(Response));
+        printf("Echo reply\n");
+        
+        u8* Data = (u8*)&Response;
+        for (int I = 0; I < sizeof(Response); I++)
+        {
+            printf("%x ", Data[I]);
+        }
+    }
+}
+
+void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
+{
+    if (FrameLength < sizeof(ipv4_frame))
+    {
+        return;
+    }
+    
+    ipv4_frame* IP = (ipv4_frame*)Frame;
+    
+    u8* Data = (u8*)IP + sizeof(ipv4_frame);
+    int DataLength = FrameLength - sizeof(ipv4_frame);
+    
+    if (DataLength < 0)
+    {
+        return;
+    }
+    
+    if (IP->Version == 4 &&
+        IP->DestAddress == IPAddress)
+    {
+        switch (IP->Protocol)
+        {
+            //ICMP
+            case 0x1:
+            {
+                //TODO: Use length from IP header
+                HandleICMP(SPI, IP, Data, DataLength);
+            }
+        }
+    }
+}
 
 void HandleEthernetFrame(spi* SPI, u8* Data, u32 Bytes)
 {
     ethernet_frame* Frame = (ethernet_frame*)Data;
+    u32 FrameLength = Bytes;
     
     if (memcmp(Frame->DestMAC, BroadcastMAC, 6) == 0 ||
         memcmp(Frame->DestMAC, MacAddress, 6) == 0)
@@ -101,47 +260,12 @@ void HandleEthernetFrame(spi* SPI, u8* Data, u32 Bytes)
         // Address Resolution Protocol
         if (Frame->EtherType[0] == 0x08 && Frame->EtherType[1] == 0x06)
         {
-            if (Bytes >= sizeof(address_resolution_protocol_frame))
-            {
-                address_resolution_protocol_frame* ARP = (address_resolution_protocol_frame*)Frame;
-                
-                if (ARP->HardwareType == 0x0100 &&
-                    ARP->ProtocolType == 0x0008 &&
-                    ARP->HardwareLength == 6 &&
-                    ARP->ProtocolLength == 4 && 
-                    memcmp(&ARP->TargetProtocolAddress, IPAddress, 4))
-                {
-                    //ARP Request
-                    if (ARP->Operation == 0x0100)
-                    {
-                        address_resolution_protocol_frame Response = {};
-                        memcpy(Response.EtherFrame.DestMAC, Frame->SourceMAC, 6);
-                        memcpy(Response.EtherFrame.SourceMAC, MacAddress, 6);
-                        Response.EtherFrame.EtherType[0] = 0x08;
-                        Response.EtherFrame.EtherType[1] = 0x06;
-                        
-                        Response.HardwareType = 0x0100;
-                        Response.ProtocolType = 0x0008;
-                        Response.HardwareLength = 6;
-                        Response.ProtocolLength = 4;
-                        Response.Operation = 0x0200;
-                        Response.TargetProtocolAddress = ARP->SenderProtocolAddress;
-                        memcpy(Response.TargetHardwareAddress, ARP->SenderHardwareAddress, 6);
-                        memcpy(&Response.SenderProtocolAddress, IPAddress, 4);
-                        memcpy(Response.SenderHardwareAddress, MacAddress, 6);
-                        
-                        W5100_Send(SPI, (u8*) &Response, sizeof(Response));
-                        
-                        printf("ARP request\n");
-                    }
-                    
-                    //ARP Response
-                    else if (ARP->Operation == 0x0200)
-                    {
-                        //TODO: add to cache
-                    }
-                }
-            }
+            HandleARP(SPI, Frame, FrameLength);
+        }
+        
+        else if (Frame->EtherType[0] == 0x08 && Frame->EtherType[1] == 0x00)
+        {
+            HandleIPv4(SPI, Frame, FrameLength);
         }
     }
 }
