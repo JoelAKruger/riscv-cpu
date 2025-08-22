@@ -28,6 +28,11 @@ u16 htons(u16 Value)
     return ((Value & 0xFF00) >> 8) | ((Value & 0x00FF) << 8);
 }
 
+u16 ntohs(u16 Value)
+{
+    return ((Value & 0xFF00) >> 8) | ((Value & 0x00FF) << 8);
+}
+
 typedef struct
 {
     u8 Bytes[6];
@@ -38,7 +43,7 @@ int MacAddressesAreEqual(mac_address* A, mac_address* B)
     return (memcmp(A, B, 6) == 0);
 }
 
-typedef struct 
+typedef struct __attribute__((packed))
 {
     mac_address DestMAC;
     mac_address SourceMAC;
@@ -147,10 +152,19 @@ void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
 {
     if (Bytes < sizeof(address_resolution_protocol_frame))
     {
+        printf("Invalid call to HandleARP\n");
         return;
     }
     
     address_resolution_protocol_frame* ARP = (address_resolution_protocol_frame*)Frame;
+    
+#if 0
+    printf("HardwareType: %x\n", ARP->HardwareType);
+    printf("ProtocolType: %x\n", ARP->ProtocolType);
+    printf("HardwareLength: %x\n", ARP->HardwareLength);
+    printf("ProtocolLength: %x\n", ARP->ProtocolLength);
+    printf("TargetProtocolAddress: %x\n", ARP->TargetProtocolAddress);
+#endif
     
     if (ARP->HardwareType == 0x0100 &&
         ARP->ProtocolType == 0x0008 &&
@@ -187,6 +201,17 @@ void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
         {
             //TODO: add to cache
         }
+    }
+    else
+    {
+#if 0
+        printf("ARP is not for me\n");
+        printf("HardwareType: %x\n", ARP->HardwareType);
+        printf("ProtocolType: %x\n", ARP->ProtocolType);
+        printf("HardwareLength: %x\n", ARP->HardwareLength);
+        printf("ProtocolLength: %x\n", ARP->ProtocolLength);
+        printf("TargetProtocolAddress: %x\n", ARP->TargetProtocolAddress);
+#endif
     }
 }
 
@@ -239,6 +264,54 @@ void HandleICMP(spi* SPI, ipv4_frame* IP, u32 FrameLength, u32 DataOffset, u32 D
     }
 }
 
+
+typedef struct __attribute__((packed))
+{
+    u16 SourcePort;
+    u16 DestPort;
+    u16 Length;
+    u16 Checksum;
+} udp_header;
+
+void HandleUDP(spi* SPI, ipv4_frame* Frame, u32 FrameLength, u32 DataOffset, u32 DataLength)
+{
+#if 0
+    printf("DataOffset = %d\n", DataOffset);
+    printf("DataLength = %d\n", DataLength);
+#endif
+    
+    if (DataLength < sizeof(udp_header))
+    {
+        return;
+    }
+    
+    udp_header* UDP = (udp_header*)((u32)Frame + DataOffset);
+    
+    DataOffset += sizeof(udp_header);
+    DataLength -= sizeof(udp_header);
+    
+    u8* Data = (u8*) ((u32)Frame + DataOffset);
+    int Length = ntohs(UDP->Length) - sizeof(udp_header);
+    
+#if 0
+    printf("Source port = %d\n", ntohs(UDP->SourcePort));
+    printf("Dest port = %d\n", ntohs(UDP->DestPort));
+    printf("Checksum = %d\n", ntohs(UDP->Checksum));
+    printf("Length (excluding header) = %d\n", Length);
+#endif
+    
+    if (Length > DataLength)
+    {
+        return;
+    }
+    
+    for (int I = 0; I < Length; I++)
+    {
+        printf("%c", Data[I]);
+    }
+}
+
+
 void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
 {
     if (FrameLength < sizeof(ipv4_frame))
@@ -248,15 +321,17 @@ void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
     
     ipv4_frame* IP = (ipv4_frame*)Frame;
     
-    int DataLength = FrameLength - sizeof(ipv4_frame);
+    int IPHeaderLength = sizeof(ipv4_frame) + 4 * (IP->InternetHeaderLength - 5);
+    
+    int DataLength = FrameLength - IPHeaderLength;
     
     if (DataLength < 0)
     {
         return;
     }
     
-    if (IP->Version == 4 &&
-        IP->DestAddress == IPAddress)
+    HandleICMP(SPI, IP, FrameLength, IPHeaderLength, DataLength);
+    if (IP->Version == 4 && IP->DestAddress == IPAddress)
     {
         switch (IP->Protocol)
         {
@@ -264,7 +339,13 @@ void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
             case 0x1:
             {
                 //TODO: Use length from IP header
-                HandleICMP(SPI, IP, FrameLength, sizeof(ipv4_frame), DataLength);
+                HandleICMP(SPI, IP, FrameLength, IPHeaderLength, DataLength);
+            } break;
+            
+            //UDP
+            case 17:
+            {
+                HandleUDP(SPI, IP, FrameLength, IPHeaderLength, DataLength);
             }
         }
     }
@@ -275,20 +356,17 @@ void HandleEthernetFrame(spi* SPI, u8* Data, u32 Bytes)
     ethernet_frame* Frame = (ethernet_frame*)Data;
     u32 FrameLength = Bytes;
     
-    printf("ether\n");
-    PrintMacAddress(&Frame->DestMAC);
-    PrintMacAddress(&MacAddress);
     if (MacAddressesAreEqual(&Frame->DestMAC, &BroadcastMAC) ||
         MacAddressesAreEqual(&Frame->DestMAC, &MacAddress))
     {
         // Address Resolution Protocol
         if (Frame->EtherType[0] == 0x08 && Frame->EtherType[1] == 0x06)
         {
-            
             HandleARP(SPI, Frame, FrameLength);
         }
         
-        else if (Frame->EtherType[0] == 0x08 && Frame->EtherType[1] == 0x00)
+        // IPv4
+        if (Frame->EtherType[0] == 0x08 && Frame->EtherType[1] == 0x00)
         {
             HandleIPv4(SPI, Frame, FrameLength);
         }

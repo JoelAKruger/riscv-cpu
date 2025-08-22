@@ -385,7 +385,7 @@ function[31:0] DoMemoryRead(
 		LOAD_U16: begin
 			case (Offset)
 				0: DoMemoryRead = Data[15:0];
-				1: DoMemoryRead = Data[31:0];
+				2: DoMemoryRead = Data[31:0];
 			endcase
 		end
 		LOAD_I32: begin
@@ -402,7 +402,7 @@ function[31:0] DoMemoryRead(
 		LOAD_I16: begin
 			case (Offset)
 				0: DoMemoryRead = {{16{Data[15]}}, Data[15:0]};
-				1: DoMemoryRead = {{16{Data[31]}}, Data[31:16]};
+				2: DoMemoryRead = {{16{Data[31]}}, Data[31:16]};
 			endcase
 		end			
 	endcase
