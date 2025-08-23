@@ -52,6 +52,7 @@ _start:
     nop
     nop
     nop
+
     li sp, 0x8000
     li t0, 43
     sw t0, 0(sp)

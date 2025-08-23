@@ -421,65 +421,41 @@ function automatic logic [31:0] GetMemoryWrite (
     endcase
 endfunction
 
-/*
-	always_comb begin
-		DataIn = 0;
-		ByteEnable = 0; //The storage is big-endian
-		case (StoreType)
-			STORE_8: begin
-				if (CPUDataAddressOffset == 0) begin
-					ByteEnable = 4'b1000;
-					DataIn = {24'b0, CPUDataIn[7:0]};
+module ensure_aligned_access(
+	input cpu_state   State,
+	input					Clock,
+	input             Reset,
+	input[1:0] 			Offset,
+	input store_type 	StoreType,
+	input load_type   LoadType,
+
+	output reg ErrorOccurred
+);
+	always_ff @(posedge Clock) begin
+		if (Reset) begin
+			ErrorOccurred <= 0;
+		end else begin
+			if (State == STATE_EXECUTE) begin
+				if (StoreType == STORE_16 && Offset[0] != 0) begin
+					ErrorOccurred <= 1;
 				end
-				if (CPUDataAddressOffset == 1) begin
-					ByteEnable = 4'b0100;
-					DataIn = {16'b0, CPUDataIn[7:0], 8'b0};
+				if (StoreType == STORE_32 && Offset != 0) begin
+					ErrorOccurred <= 1;
 				end
-				if (CPUDataAddressOffset == 2) begin
-					ByteEnable = 4'b0010;
-					DataIn = {8'b0, CPUDataIn[7:0], 16'b0};
+				
+				if ((LoadType == LOAD_I16 || LoadType == LOAD_U16) && Offset[0] != 0) begin
+					ErrorOccurred <= 1;
 				end
-				if (CPUDataAddressOffset == 3) begin
-					ByteEnable = 4'b0001;
-					DataIn = {CPUDataIn[7:0], 24'b0};
-				end
-			end
-			STORE_16: begin
-				if (CPUDataAddressOffset == 0) begin
-					ByteEnable = 4'b1100;
-					DataIn = {16'b0, CPUDataIn[15:0]};
-				end
-				if (CPUDataAddressOffset == 2) begin
-					ByteEnable = 4'b0011;
-					DataIn = {CPUDataIn[15:0], 16'b0};
+				if (LoadType == LOAD_I32 && Offset != 0) begin
+					ErrorOccurred <= 1;
 				end
 			end
-			STORE_32: begin
-				ByteEnable = 4'b1111;
-				DataIn = CPUDataIn;
-			end
-		endcase
-		
-		CPUDataOutput = 0;
-		case (LoadType)
-			LOAD_U8: begin
-				CPUDataOutput = DataOut8;
-			end
-			LOAD_U16: begin
-				CPUDataOutput = DataOut16;
-			end
-			LOAD_I32: begin
-				CPUDataOutput = RawCPUDataOutput;
-			end
-			LOAD_I8: begin
-				CPUDataOutput = `SignExtend(DataOut8, 8);
-			end
-			LOAD_I16: begin
-				CPUDataOutput = `SignExtend(DataOut16, 16);
-			end			
-		endcase
+		end
 	end
-*/
+	
+	
+	
+endmodule
 
 function automatic logic [31:0] EndianSwap(logic [31:0] In);
     logic [31:0] Out;
@@ -658,10 +634,23 @@ module cpu(
 		end
 	end
 	
-	assign DebugOut32 = PC;
+	logic ErrorFlag;
 	
-	//                   [9:7]        [6:3]                   [2]                [1]             [0]                      
-	assign DebugOut = {LoadType, MemoryWriteByteEnable, MemoryWriteEnable, MemoryReadEnable, State};
+	ensure_aligned_access Align(
+		.State(State),
+		.Clock(Clock),
+		.Offset(AluResult[1:0]),
+		.Reset(Reset),
+		.StoreType(StoreType),
+		.LoadType(LoadType),
+		.ErrorOccurred(ErrorFlag)
+	);
+	
+	assign DebugOut32 = PC;
+	 //                    [9:7]        [6:3]                   [2]                [1]             [0]                      
+	//assign DebugOut = {LoadType, MemoryWriteByteEnable, MemoryWriteEnable, MemoryReadEnable, State};
+	
+	assign DebugOut[0] = ErrorFlag;
 	
 endmodule
 

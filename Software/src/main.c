@@ -43,6 +43,15 @@ int MacAddressesAreEqual(mac_address* A, mac_address* B)
     return (memcmp(A, B, 6) == 0);
 }
 
+typedef struct
+{
+    mac_address MAC;
+    u32 IP;
+    u32 SubnetMask;
+    
+    spi* Backend;
+} network_interface;
+
 typedef struct __attribute__((packed))
 {
     mac_address DestMAC;
@@ -133,7 +142,6 @@ void PrintEthernetFrame(ethernet_frame* Frame)
     printf("\n");
 }
 
-
 void PrintMacAddress(mac_address* MAC)
 {
     printf("MAC: ");
@@ -144,11 +152,12 @@ void PrintMacAddress(mac_address* MAC)
     printf("\n");
 }
 
-mac_address MacAddress = {{0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}};
+//mac_address MacAddress = {{0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}};
 mac_address BroadcastMAC = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};
-u32 IPAddress = (10) | (0 << 8) | (0 << 16) | (20 << 24); //10.0.0.20
+//u32 IPAddress = (10) | (0 << 8) | (0 << 16) | (20 << 24); //10.0.0.20
+//u32 SubnetMask = 0xFFFFFF00; //255.255.255.0
 
-void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
+void HandleARP(network_interface* Interface, ethernet_frame* Frame, u32 Bytes)
 {
     if (Bytes < sizeof(address_resolution_protocol_frame))
     {
@@ -170,14 +179,14 @@ void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
         ARP->ProtocolType == 0x0008 &&
         ARP->HardwareLength == 6 &&
         ARP->ProtocolLength == 4 && 
-        ARP->TargetProtocolAddress == IPAddress)
+        ARP->TargetProtocolAddress == Interface->IP)
     {
         //ARP Request
         if (ARP->Operation == 0x0100)
         {
             address_resolution_protocol_frame Response = {};
             Response.EtherFrame.DestMAC = Frame->SourceMAC;
-            Response.EtherFrame.SourceMAC = MacAddress;
+            Response.EtherFrame.SourceMAC = Interface->MAC;
             Response.EtherFrame.EtherType[0] = 0x08;
             Response.EtherFrame.EtherType[1] = 0x06;
             
@@ -188,10 +197,10 @@ void HandleARP(spi* SPI, ethernet_frame* Frame, u32 Bytes)
             Response.Operation = 0x0200;
             Response.TargetProtocolAddress = ARP->SenderProtocolAddress;
             Response.TargetHardwareAddress = ARP->SenderHardwareAddress;
-            Response.SenderProtocolAddress = IPAddress;
-            Response.SenderHardwareAddress = MacAddress;
+            Response.SenderProtocolAddress = Interface->IP;
+            Response.SenderHardwareAddress = Interface->MAC;
             
-            W5100_Send(SPI, (u8*) &Response, sizeof(Response));
+            W5100_Send(Interface->Backend, (u8*) &Response, sizeof(Response));
             
             printf("ARP request\n");
         }
@@ -224,15 +233,7 @@ typedef struct __attribute__((packed))
     u16 Sequence;
 } icmp_header;
 
-typedef struct
-{
-    ipv4_frame IPFrame;
-    icmp_header ICMP;
-} icmp_reply_frame;
-
-_Static_assert(sizeof(icmp_reply_frame) == sizeof(ipv4_frame) + sizeof(icmp_header), "");
-
-void HandleICMP(spi* SPI, ipv4_frame* IP, u32 FrameLength, u32 DataOffset, u32 DataLength)
+void HandleICMP(network_interface* Interface, ipv4_frame* IP, u32 FrameLength, u32 DataOffset, u32 DataLength)
 {
     if (DataLength < sizeof(icmp_header))
     {
@@ -253,17 +254,16 @@ void HandleICMP(spi* SPI, ipv4_frame* IP, u32 FrameLength, u32 DataOffset, u32 D
         //Swap IP addresses of ipv4 header
         u32 SourceIP = IP->SourceAddress;
         IP->SourceAddress = IP->DestAddress;
-        IP->DestAddress = SourceIP;
+        IP->DestAddress = (10) | (0 << 8) | (0 << 16) | (10 << 24); //SourceIP;
         
         ICMP->Type = 0; //echo reply
         ICMP->Checksum = 0;
         
         ICMP->Checksum = htons(CalculateInternetChecksum((u8*)ICMP, DataLength));
         
-        W5100_Send(SPI, (u8*) IP, FrameLength);
+        W5100_Send(Interface->Backend, (u8*) IP, FrameLength);
     }
 }
-
 
 typedef struct __attribute__((packed))
 {
@@ -273,7 +273,7 @@ typedef struct __attribute__((packed))
     u16 Checksum;
 } udp_header;
 
-void HandleUDP(spi* SPI, ipv4_frame* Frame, u32 FrameLength, u32 DataOffset, u32 DataLength)
+void HandleUDP(network_interface* Interface, ipv4_frame* Frame, u32 FrameLength, u32 DataOffset, u32 DataLength)
 {
 #if 0
     printf("DataOffset = %d\n", DataOffset);
@@ -312,7 +312,7 @@ void HandleUDP(spi* SPI, ipv4_frame* Frame, u32 FrameLength, u32 DataOffset, u32
 }
 
 
-void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
+void HandleIPv4(network_interface* Interface, ethernet_frame* Frame, u32 FrameLength)
 {
     if (FrameLength < sizeof(ipv4_frame))
     {
@@ -330,8 +330,8 @@ void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
         return;
     }
     
-    HandleICMP(SPI, IP, FrameLength, IPHeaderLength, DataLength);
-    if (IP->Version == 4 && IP->DestAddress == IPAddress)
+    if (IP->Version == 4 && 
+        (IP->DestAddress == Interface->IP || IP->DestAddress == (Interface->IP | ~Interface->SubnetMask)))
     {
         switch (IP->Protocol)
         {
@@ -339,36 +339,36 @@ void HandleIPv4(spi* SPI, ethernet_frame* Frame, u32 FrameLength)
             case 0x1:
             {
                 //TODO: Use length from IP header
-                HandleICMP(SPI, IP, FrameLength, IPHeaderLength, DataLength);
+                HandleICMP(Interface, IP, FrameLength, IPHeaderLength, DataLength);
             } break;
             
             //UDP
             case 17:
             {
-                HandleUDP(SPI, IP, FrameLength, IPHeaderLength, DataLength);
+                HandleUDP(Interface, IP, FrameLength, IPHeaderLength, DataLength);
             }
         }
     }
 }
 
-void HandleEthernetFrame(spi* SPI, u8* Data, u32 Bytes)
+void HandleEthernetFrame(network_interface* Interface, u8* Data, u32 Bytes)
 {
     ethernet_frame* Frame = (ethernet_frame*)Data;
     u32 FrameLength = Bytes;
     
     if (MacAddressesAreEqual(&Frame->DestMAC, &BroadcastMAC) ||
-        MacAddressesAreEqual(&Frame->DestMAC, &MacAddress))
+        MacAddressesAreEqual(&Frame->DestMAC, &Interface->MAC))
     {
         // Address Resolution Protocol
         if (Frame->EtherType[0] == 0x08 && Frame->EtherType[1] == 0x06)
         {
-            HandleARP(SPI, Frame, FrameLength);
+            HandleARP(Interface, Frame, FrameLength);
         }
         
         // IPv4
         if (Frame->EtherType[0] == 0x08 && Frame->EtherType[1] == 0x00)
         {
-            HandleIPv4(SPI, Frame, FrameLength);
+            HandleIPv4(Interface, Frame, FrameLength);
         }
     }
 }
@@ -396,6 +396,18 @@ void main(void)
         .MOSI = (u32*)0x40110,
         .MISO = (u32*)0x40118
     };
+    mac_address MAC;
+    u32 IP;
+    u32 SubnetMask;
+    
+    spi* Backend;
+    
+    network_interface Interface = {
+        .MAC = {{0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}},
+        .IP = (10) | (0 << 8) | (0 << 16) | (20 << 24), //10.0.0.20
+        .SubnetMask = 0xFFFFFF00, //255.255.255.0
+        .Backend = &SPI
+    };
     
     W5100_SetupMACRaw(&SPI);
     
@@ -411,7 +423,7 @@ void main(void)
             
             if (BytesReceived != -1)
             {
-                HandleEthernetFrame(&SPI, ReceivedData, BytesReceived);
+                HandleEthernetFrame(&Interface, ReceivedData, BytesReceived);
             }
         }
     }
